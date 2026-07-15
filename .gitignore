@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# 数据库（无状态模式不依赖，但若本地测试生成则忽略）
+*.db
+*.sqlite
+
+# 环境变量
+.env
+.env.local
+
+# 日志
+*.log

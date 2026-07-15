@@ -36,6 +36,18 @@ app.add_middleware(
 
 app.include_router(payment_router)
 
+
+@app.get("/")
+async def root():
+    """根路径健康检查，确保 Railway 等平台默认健康检查通过"""
+    return {"status": "AEO Analyzer API", "health": "ok"}
+
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
 crawler = Crawler(timeout=15)
 scorer = AEOScorer()
 
@@ -121,11 +133,6 @@ async def download_word(report_id: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
-
-
-@app.get("/api/health")
-async def health():
-    return {"status": "ok"}
 
 
 # ===== 前端静态文件服务（生产模式） =====

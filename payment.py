@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import store
 
-router = APIRouter(prefix="/api/payment", tags=["payment"])
+router = APIRouter(prefix="/payment", tags=["payment"])
 
 
 class CreateOrderRequest(BaseModel):

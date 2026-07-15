@@ -43,7 +43,7 @@ async def root():
     return {"status": "AEO Analyzer API", "health": "ok"}
 
 
-@app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "ok"}
 
@@ -56,7 +56,7 @@ class AnalyzeRequest(BaseModel):
     url: str
 
 
-@app.post("/api/analyze")
+@app.post("/analyze")
 async def analyze(req: AnalyzeRequest):
     """分析 URL 的 AEO 健康度"""
     url = req.url.strip()
@@ -86,7 +86,7 @@ async def analyze(req: AnalyzeRequest):
     }
 
 
-@app.get("/api/report/{report_id}")
+@app.get("/report/{report_id}")
 async def get_report(report_id: str, type: str = Query("free", pattern="^(free|full)$")):
     """获取报告内容
     - type=free: 返回前 1/3 内容（免费）
@@ -114,7 +114,7 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
     }
 
 
-@app.get("/api/report/{report_id}/word")
+@app.get("/report/{report_id}/word")
 async def download_word(report_id: str):
     """下载 Word 版报告"""
     report = await store.get_report(report_id)

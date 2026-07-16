@@ -49,7 +49,7 @@ async def health():
     return {"status": "ok"}
 
 
-crawler = Crawler(timeout=15)
+crawler = Crawler(timeout=15, max_retries=3, retry_delay=2.0)
 scorer = AEOScorer()
 
 

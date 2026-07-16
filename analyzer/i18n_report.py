@@ -418,15 +418,15 @@ SKELETONS = [
 # 术语层：章节标题 / 分组名 / 衡量维度名（精确映射）
 # ---------------------------------------------------------------------------
 TITLE_EN = {
-    '一、AEO 健康度评分总览': 'I. AEO Health Score Overview',
+    '一、核心结论': 'I. Core Verdict',
     '二、网站当前 AEO 优势': 'II. Current AEO Strengths',
     '三、当前最大 AEO 问题': 'III. Top AEO Issues',
-    '四、Persona × Funnel × Use Case 内容机会': 'IV. Persona × Funnel × Use Case Content Opportunities',
-    '五、最值得优先做的 AEO 页面': 'V. Top-Priority AEO Pages to Build',
-    '六、页面重构模板': 'VI. Page Restructuring Template',
-    '七、技术与抓取层面建议': 'VII. Technical & Crawl Recommendations',
-    '八、AEO 效果衡量方式': 'VIII. AEO Effect Measurement Methods',
-    '九、最终判断': 'IX. Final Verdict',
+    '四、内容类型覆盖分析': 'IV. Content-Type Coverage Analysis',
+    '五、Persona × Funnel × Use Case 内容机会': 'V. Persona × Funnel × Use Case Content Opportunities',
+    '六、最值得优先做的 AEO 页面': 'VI. Top-Priority AEO Pages to Build',
+    '七、页面重构模板': 'VII. Page Restructuring Template',
+    '八、技术与抓取层面建议': 'VIII. Technical & Crawl Recommendations',
+    '九、AEO 效果衡量方式': 'IX. AEO Effect Measurement Methods',
 }
 GROUP_NAME_EN = {
     '第一组：对比类页面': 'Group 1: Comparison Pages',
@@ -464,7 +464,8 @@ WORD_I18N = {
         'example_page_label': '示例页面：',
         'geo_template_label': 'GEO/AEO 内容模板',
         'sep': '、',
-        'free_message': '这是免费版本，包含前 3 部分内容。支付后可查看完整 9 部分报告并下载 Word 版本。',
+        'free_message': '这是免费版本，包含前 4 部分内容。支付后可查看完整 9 部分报告并下载 Word 版本。',
+        'eight_elements_label': '每篇 AI 可引用页面的八个要素：',
     },
     'en-US': {
         'report_title_suffix': 'AEO / GEO Optimization Report',
@@ -485,7 +486,8 @@ WORD_I18N = {
         'example_page_label': 'Example Page: ',
         'geo_template_label': 'GEO/AEO Content Template',
         'sep': ', ',
-        'free_message': 'This is the free version, containing the first 3 parts. After payment you can view the full 9-part report and download the Word version.',
+        'free_message': 'This is the free version, containing the first 4 parts. After payment you can view the full 9-part report and download the Word version.',
+        'eight_elements_label': 'Eight Elements of an AI-Citable Page:',
     },
 }
 
@@ -526,13 +528,21 @@ def translate_report(report: dict, lang: str) -> dict:
     if r.get('meta', {}).get('summary'):
         r['meta']['summary'] = translate_string(r['meta']['summary'])
 
-    # ---- Part 1 ----
-    p1 = r.get('part1_overview')
+    # ---- Part 1: 核心结论 ----
+    p1 = r.get('part1_core_judgment')
     if p1:
         if p1.get('title') in TITLE_EN:
             p1['title'] = TITLE_EN[p1['title']]
         if p1.get('summary'):
             p1['summary'] = translate_string(p1['summary'])
+        if p1.get('judgment'):
+            p1['judgment'] = translate_string(p1['judgment'])
+        if p1.get('priority_action'):
+            p1['priority_action'] = translate_string(p1['priority_action'])
+        if p1.get('overview_score'):
+            p1['overview_score'] = translate_string(p1['overview_score'])
+        if p1.get('dimension_summary'):
+            p1['dimension_summary'] = [translate_string(ds) for ds in p1['dimension_summary']]
         if p1.get('dimensions'):
             p1['dimensions'] = [
                 {
@@ -543,7 +553,7 @@ def translate_report(report: dict, lang: str) -> dict:
                 for d in p1['dimensions']
             ]
 
-    # ---- Part 2 ----
+    # ---- Part 2: 优势 ----
     p2 = r.get('part2_advantages')
     if p2:
         if p2.get('title') in TITLE_EN:
@@ -551,7 +561,7 @@ def translate_report(report: dict, lang: str) -> dict:
         if p2.get('items'):
             p2['items'] = [translate_string(it) for it in p2['items']]
 
-    # ---- Part 3 ----
+    # ---- Part 3: 问题 ----
     p3 = r.get('part3_problems')
     if p3:
         if p3.get('title') in TITLE_EN:
@@ -565,15 +575,32 @@ def translate_report(report: dict, lang: str) -> dict:
                 new_problems.append(np)
             p3['problems'] = new_problems
 
-    # ---- Part 4 ----
-    p4 = r.get('part4_content_opportunities')
+    # ---- Part 4: 内容类型覆盖 ----
+    p4 = r.get('part4_content_coverage')
     if p4:
         if p4.get('title') in TITLE_EN:
             p4['title'] = TITLE_EN[p4['title']]
         if p4.get('description'):
             p4['description'] = translate_string(p4['description'])
-        if p4.get('scenarios'):
-            p4['scenarios'] = [
+        if p4.get('content_types'):
+            p4['content_types'] = [
+                {
+                    **ct,
+                    'type': translate_string(ct.get('type', '')),
+                    'description': translate_string(ct.get('description', '')),
+                }
+                for ct in p4['content_types']
+            ]
+
+    # ---- Part 5: Persona × Funnel × Use Case ----
+    p5 = r.get('part5_opportunities')
+    if p5:
+        if p5.get('title') in TITLE_EN:
+            p5['title'] = TITLE_EN[p5['title']]
+        if p5.get('description'):
+            p5['description'] = translate_string(p5['description'])
+        if p5.get('scenarios'):
+            p5['scenarios'] = [
                 {
                     **sc,
                     'persona': translate_persona(sc.get('persona', '')),
@@ -581,36 +608,36 @@ def translate_report(report: dict, lang: str) -> dict:
                     'ai_question': translate_string(sc.get('ai_question', '')),
                     'page': translate_string(sc.get('page', '')),
                 }
-                for sc in p4['scenarios']
+                for sc in p5['scenarios']
             ]
 
-    # ---- Part 5 ----
-    p5 = r.get('part5_priority_pages')
-    if p5:
-        if p5.get('title') in TITLE_EN:
-            p5['title'] = TITLE_EN[p5['title']]
-        if p5.get('description'):
-            p5['description'] = translate_string(p5['description'])
-        if p5.get('groups'):
-            p5['groups'] = [
-                {
-                    **g,
-                    'name': GROUP_NAME_EN.get(g.get('name', ''), g.get('name', '')),
-                    'pages': [translate_string(pg) for pg in g.get('pages', [])],
-                }
-                for g in p5['groups']
-            ]
-        if p5.get('top5'):
-            p5['top5'] = [translate_string(pg) for pg in p5['top5']]
-
-    # ---- Part 6 ----
-    p6 = r.get('part6_page_template')
+    # ---- Part 6: 优先页面 ----
+    p6 = r.get('part6_priority_pages')
     if p6:
         if p6.get('title') in TITLE_EN:
             p6['title'] = TITLE_EN[p6['title']]
         if p6.get('description'):
             p6['description'] = translate_string(p6['description'])
-        ex = p6.get('example')
+        if p6.get('groups'):
+            p6['groups'] = [
+                {
+                    **g,
+                    'name': GROUP_NAME_EN.get(g.get('name', ''), g.get('name', '')),
+                    'pages': [translate_string(pg) for pg in g.get('pages', [])],
+                }
+                for g in p6['groups']
+            ]
+        if p6.get('top5'):
+            p6['top5'] = [translate_string(pg) for pg in p6['top5']]
+
+    # ---- Part 7: 页面模板 ----
+    p7 = r.get('part7_page_template')
+    if p7:
+        if p7.get('title') in TITLE_EN:
+            p7['title'] = TITLE_EN[p7['title']]
+        if p7.get('description'):
+            p7['description'] = translate_string(p7['description'])
+        ex = p7.get('example')
         if ex:
             ex['page_title'] = translate_string(ex.get('page_title', ''))
             if ex.get('structure'):
@@ -624,40 +651,31 @@ def translate_report(report: dict, lang: str) -> dict:
                 ]
             ex['geo_template'] = translate_string(ex.get('geo_template', ''))
 
-    # ---- Part 7 ----
-    p7 = r.get('part7_technical_suggestions')
-    if p7:
-        if p7.get('title') in TITLE_EN:
-            p7['title'] = TITLE_EN[p7['title']]
-        if p7.get('items'):
-            p7['items'] = [translate_string(it) for it in p7['items']]
-
-    # ---- Part 8 ----
-    p8 = r.get('part8_measurement')
+    # ---- Part 8: 技术建议 ----
+    p8 = r.get('part8_technical')
     if p8:
         if p8.get('title') in TITLE_EN:
             p8['title'] = TITLE_EN[p8['title']]
-        if p8.get('description'):
-            p8['description'] = translate_string(p8['description'])
-        if p8.get('dimensions'):
-            p8['dimensions'] = [
-                {
-                    **d,
-                    'name': MEASURE_DIM_EN.get(d.get('name', ''), d.get('name', '')),
-                    'description': translate_string(d.get('description', '')),
-                    'prompts': [translate_string(p) for p in d.get('prompts', [])] if d.get('prompts') else d.get('prompts'),
-                }
-                for d in p8['dimensions']
-            ]
+        if p8.get('items'):
+            p8['items'] = [translate_string(it) for it in p8['items']]
 
-    # ---- Part 9 ----
-    p9 = r.get('part9_conclusion')
+    # ---- Part 9: 效果衡量 ----
+    p9 = r.get('part9_measurement')
     if p9:
         if p9.get('title') in TITLE_EN:
             p9['title'] = TITLE_EN[p9['title']]
-        p9['overview'] = translate_string(p9.get('overview', ''))
-        p9['action'] = translate_string(p9.get('action', ''))
-        p9['summary'] = translate_string(p9.get('summary', ''))
+        if p9.get('description'):
+            p9['description'] = translate_string(p9['description'])
+        if p9.get('dimensions'):
+            p9['dimensions'] = [
+                {
+                    **d,
+                    'name': translate_string(d.get('name', '')),
+                    'description': translate_string(d.get('description', '')),
+                    'prompts': [translate_string(p) for p in d.get('prompts', [])] if d.get('prompts') else d.get('prompts'),
+                }
+                for d in p9['dimensions']
+            ]
 
     # ---- dimension_details ----
     if r.get('dimension_details'):

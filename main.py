@@ -105,7 +105,7 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
         return {"success": True, "data": translate_report(full, lang), "is_full": True}
 
     # 免费版：返回前 3 部分
-    free_keys = ["meta", "part1_overview", "part2_advantages", "part3_problems", "dimension_details"]
+    free_keys = ["meta", "part1_core_judgment", "part2_advantages", "part3_problems", "part4_content_coverage", "dimension_details"]
     free_data = {k: full[k] for k in free_keys if k in full}
     free_data["meta"] = full.get("meta", {})
     return {
@@ -113,7 +113,7 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
         "data": translate_report(free_data, lang),
         "is_full": False,
         "total_parts": 9,
-        "free_parts": 3,
+        "free_parts": 4,
         "message": WORD_I18N.get(lang, WORD_I18N["zh-CN"])["free_message"],
     }
 

@@ -3,6 +3,8 @@ AEO 网页爬取引擎
 负责爬取目标网站的 HTML 内容、标题、元数据、结构信息
 """
 import re
+import random
+import time
 import httpx
 from dataclasses import dataclass, field
 from bs4 import BeautifulSoup
@@ -39,42 +41,83 @@ class PageData:
 
 
 class Crawler:
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    }
+    USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/124.0.2478.80",
+    ]
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 15, max_retries: int = 3, retry_delay: float = 2.0):
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    def _headers(self) -> dict:
+        return {
+            "User-Agent": random.choice(self.USER_AGENTS),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
+        }
 
     async def crawl(self, url: str) -> PageData:
         data = PageData(url=url)
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True, headers=self.HEADERS, verify=False) as client:
-                resp = await client.get(url)
-                data.status_code = resp.status_code
-                if resp.status_code != 200:
-                    data.error = f"HTTP {resp.status_code}"
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout,
+                    follow_redirects=True,
+                    headers=self._headers(),
+                    verify=False,
+                ) as client:
+                    resp = await client.get(url)
+                    data.status_code = resp.status_code
+                    # 对 429/503/502/504 等限流或临时错误进行重试
+                    if resp.status_code in (429, 503, 502, 504, 408) and attempt < self.max_retries - 1:
+                        wait = self.retry_delay * (2 ** attempt) + random.uniform(0, 1)
+                        time.sleep(wait)
+                        continue
+                    if resp.status_code >= 400:
+                        data.error = f"HTTP {resp.status_code}"
+                        if resp.status_code == 429:
+                            data.error = "HTTP 429：目标网站请求过于频繁，请稍后重试"
+                        return data
+                    html = resp.text
+                    soup = BeautifulSoup(html, "lxml")
+                    self._extract_basic_info(soup, data)
+                    self._extract_headings(soup, data)
+                    self._extract_links(soup, data)
+                    self._extract_images(soup, data)
+                    self._extract_content(soup, data)
+                    self._extract_schema(soup, data)
+                    self._extract_faq(soup, data)
+                    self._extract_credibility(soup, data)
+                    self._extract_comparison(soup, data)
+                    self._extract_meta(soup, data)
                     return data
-                html = resp.text
-                soup = BeautifulSoup(html, "lxml")
-                self._extract_basic_info(soup, data)
-                self._extract_headings(soup, data)
-                self._extract_links(soup, data)
-                self._extract_images(soup, data)
-                self._extract_content(soup, data)
-                self._extract_schema(soup, data)
-                self._extract_faq(soup, data)
-                self._extract_credibility(soup, data)
-                self._extract_comparison(soup, data)
-                self._extract_meta(soup, data)
-        except httpx.TimeoutException:
-            data.error = "请求超时"
-        except httpx.ConnectError:
-            data.error = "无法连接到目标网站"
-        except Exception as e:
-            data.error = str(e)
+            except httpx.TimeoutException:
+                data.error = "请求超时"
+                last_exception = "timeout"
+            except httpx.ConnectError:
+                data.error = "无法连接到目标网站"
+                last_exception = "connect"
+            except Exception as e:
+                data.error = str(e)
+                last_exception = e
+            # 非 429 类异常也按指数退避重试
+            if attempt < self.max_retries - 1:
+                wait = self.retry_delay * (2 ** attempt) + random.uniform(0, 1)
+                time.sleep(wait)
         return data
 
     def _extract_basic_info(self, soup, data):

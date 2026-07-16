@@ -20,7 +20,8 @@ from analyzer.scorer import AEOScore, DimScore
 
 def generate_report(url: str, page_data: PageData, aeo_score: AEOScore) -> dict:
     domain = _extract_domain(url)
-    site_name = page_data.title or domain
+    brand_name = page_data.brand_name or _extract_brand_from_domain(domain)
+    site_name = brand_name
     industry = _guess_industry(page_data)
 
     report = {
@@ -485,6 +486,14 @@ def _build_part9_measurement(site_name, domain, industry):
 def _extract_domain(url: str) -> str:
     m = __import__('re').search(r'https?://([^/]+)', url)
     return m.group(1) if m else url
+
+
+def _extract_brand_from_domain(domain: str) -> str:
+    """从域名中提取候选品牌名（去掉 www 和常见 TLD）。"""
+    import re
+    d = re.sub(r'^www\.', '', domain, flags=re.I)
+    d = re.sub(r'\.(com|net|org|co\.\w+|io|ai|app|shop|store|cn|us|uk|eu|jp|kr|de|fr)(/.*)?$', '', d, flags=re.I)
+    return d.strip() or domain
 
 
 def _guess_industry(page_data):

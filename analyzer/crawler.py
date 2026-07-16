@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 class PageData:
     url: str
     title: str = ""
+    brand_name: str = ""
     meta_description: str = ""
     h1_texts: list = field(default_factory=list)
     h2_texts: list = field(default_factory=list)
@@ -122,8 +123,72 @@ class Crawler:
 
     def _extract_basic_info(self, soup, data):
         data.title = soup.title.string.strip() if soup.title else ""
+        data.brand_name = self._extract_brand_name(soup, data.title)
         meta_desc = soup.find("meta", attrs={"name": "description"})
         data.meta_description = meta_desc.get("content", "") if meta_desc else ""
+
+    def _extract_brand_name(self, soup, title: str) -> str:
+        """优先从页面元数据中提取品牌名，避免使用域名作为品牌名。"""
+        # 1. og:site_name
+        og_site = soup.find("meta", attrs={"property": "og:site_name"})
+        if og_site and og_site.get("content", "").strip():
+            return self._clean_brand(og_site["content"])
+
+        # 2. application-name
+        app_name = soup.find("meta", attrs={"name": "application-name"})
+        if app_name and app_name.get("content", "").strip():
+            return self._clean_brand(app_name["content"])
+
+        # 3. Organization / Brand schema
+        for script in soup.find_all("script", type="application/ld+json"):
+            try:
+                import json
+                ld = json.loads(script.string or "{}")
+                if isinstance(ld, dict):
+                    if ld.get("@type") in ("Organization", "Brand") and ld.get("name"):
+                        return self._clean_brand(ld["name"])
+                    # 有时 Organization 在 @graph 里
+                    graph = ld.get("@graph", [])
+                    if isinstance(graph, list):
+                        for item in graph:
+                            if item.get("@type") in ("Organization", "Brand") and item.get("name"):
+                                return self._clean_brand(item["name"])
+            except Exception:
+                pass
+
+        # 4. 从 title 中提取品牌名
+        if title:
+            brand = self._extract_brand_from_title(title)
+            if brand:
+                return self._clean_brand(brand)
+
+        # 5. 从 logo 图片 alt 文本中推断
+        for img in soup.find_all("img"):
+            alt = (img.get("alt", "") or "").strip()
+            src = (img.get("src", "") or "").lower()
+            if alt and len(alt) <= 40 and not any(w in alt.lower() for w in ["banner", "hero", "slide", "icon", "avatar"]):
+                return self._clean_brand(alt)
+            if "logo" in src:
+                # 从文件名提取，如 logo-petkit.png -> petkit
+                name = re.sub(r'.*[\\/]', '', src)
+                name = re.sub(r'\.(png|jpg|jpeg|svg|webp|gif).*', '', name, flags=re.I)
+                name = re.sub(r'[\-_]?logo[\-_]?', '', name, flags=re.I)
+                if name:
+                    return self._clean_brand(name)
+
+        return ""
+
+    def _clean_brand(self, text: str) -> str:
+        """清理品牌名：去首尾空白、截断过长文本。"""
+        if not text:
+            return ""
+        text = text.strip()
+        # 如果包含换行或明显是段落，则不适合做品牌名
+        if "\n" in text or len(text) > 60:
+            return ""
+        # 去掉末尾常见标语词
+        text = re.sub(r'[\s]*[-|—–:][\s]*.*$', '', text)
+        return text[:60]
 
     def _extract_headings(self, soup, data):
         data.h1_texts = [h.get_text(strip=True) for h in soup.find_all("h1")]

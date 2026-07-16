@@ -4,6 +4,8 @@ AEO 分析工具 - FastAPI 主入口（无状态模式，适配 Railway 等免�
 import json
 import io
 import os
+import re
+import urllib.parse
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -127,15 +129,18 @@ async def download_word(report_id: str, lang: str = Query("zh-CN")):
 
     from word_generator import generate_word
     doc_bytes = generate_word(translate_report(report["full_report"], lang), lang)
-    site_name = report["full_report"]["meta"]["site_name"].replace(" ", "_")[:30]
-    # ASCII 安全的文件名，避免编码问题
-    ascii_name = "AEO_Report"
-    filename = f"{ascii_name}_{report_id[:8]}.docx"
+    site_name = report["full_report"]["meta"]["site_name"]
+    # 生成安全的文件名：品牌名保留原样（含中文），替换不安全字符
+    safe_name = re.sub(r'[\\/:*?"<>|\s]', '_', site_name).strip('_')[:40] or "AEO_Report"
+    filename = f"{safe_name}_AEO分析报告.docx"
+
+    # RFC 5987 编码：支持中文等非 ASCII 字符
+    encoded_filename = urllib.parse.quote(filename)
 
     return StreamingResponse(
         io.BytesIO(doc_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
     )
 
 

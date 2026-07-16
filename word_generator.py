@@ -10,9 +10,15 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
+from analyzer.i18n_report import WORD_I18N
 
 
-def generate_word(report: dict) -> bytes:
+def _w(lang: str, key: str) -> str:
+    """取 Word 专用语言字符串"""
+    return WORD_I18N.get(lang, WORD_I18N["zh-CN"])[key]
+
+
+def generate_word(report: dict, lang: str = "zh-CN") -> bytes:
     doc = Document()
 
     # 设置默认字体
@@ -42,7 +48,7 @@ def generate_word(report: dict) -> bytes:
     # ===== 标题 =====
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = title.add_run(f"{meta.get('site_name', '')} AEO / GEO 优化分析报告")
+    run = title.add_run(f"{meta.get('site_name', '')} {_w(lang, 'report_title_suffix')}")
     run.font.size = Pt(26)
     run.font.color.rgb = DARK_BLUE
     run.bold = True
@@ -56,7 +62,7 @@ def generate_word(report: dict) -> bytes:
     # 副标题
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = subtitle.add_run('基于"AI 是否会把它当成合理答案"的优化建议方案')
+    run = subtitle.add_run(_w(lang, 'subtitle'))
     run.font.size = Pt(14)
     run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
     run.font.name = 'Microsoft YaHei'
@@ -65,7 +71,7 @@ def generate_word(report: dict) -> bytes:
     # 分析对象
     info = doc.add_paragraph()
     info.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = info.add_run(f"分析对象：{meta.get('url', '')}")
+    run = info.add_run(f"{_w(lang, 'analysis_target')}{meta.get('url', '')}")
     run.font.size = Pt(10)
     run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
     run.font.name = 'Microsoft YaHei'
@@ -74,7 +80,7 @@ def generate_word(report: dict) -> bytes:
     # 评分
     score_p = doc.add_paragraph()
     score_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = score_p.add_run(f"初步 AEO 评分 {meta.get('total_score', 0)} / 100")
+    run = score_p.add_run(f"{_w(lang, 'prelim_score')} {meta.get('total_score', 0)} / 100")
     run.font.size = Pt(16)
     run.font.color.rgb = DARK_BLUE
     run.bold = True
@@ -84,11 +90,12 @@ def generate_word(report: dict) -> bytes:
     doc.add_paragraph()  # 空行
 
     # ===== 第一部分：总览 =====
-    _add_h1(doc, "一、AEO 健康度评分总览")
-
     overview = report.get("part1_overview", {})
+    _add_h1(doc, overview.get("title", _w(lang, 'report_title_suffix')))
+
     p = doc.add_paragraph()
-    run = p.add_run(f"网站 AEO 综合评分：{overview.get('total_score', 0)}/100（{overview.get('grade', 'N/A')} 级）")
+    run = p.add_run(_w(lang, 'overview_score').format(
+        overview.get('total_score', 0), overview.get('grade', 'N/A')))
     run.font.size = Pt(12)
     run.font.name = 'Microsoft YaHei'
     run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
@@ -108,7 +115,7 @@ def generate_word(report: dict) -> bytes:
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
         # 表头
-        headers = ["维度", "权重", "评分", "关键发现"]
+        headers = [_w(lang, 'th_dimension'), _w(lang, 'th_weight'), _w(lang, 'th_score'), _w(lang, 'th_key_finding')]
         for i, h in enumerate(headers):
             cell = table.rows[0].cells[i]
             cell.text = ""
@@ -138,7 +145,7 @@ def generate_word(report: dict) -> bytes:
                     cell._element.get_or_add_tcPr().append(shading)
 
     # ===== 第二部分：AEO 优势 =====
-    _add_h1(doc, "二、网站当前 AEO 优势")
+    _add_h1(doc, report.get("part2_advantages", {}).get("title", _w(lang, 'report_title_suffix')))
 
     advantages = report.get("part2_advantages", {})
     for item in advantages.get("items", []):
@@ -150,7 +157,7 @@ def generate_word(report: dict) -> bytes:
         p.paragraph_format.left_indent = Cm(0.5)
 
     # ===== 第三部分：AEO 问题 =====
-    _add_h1(doc, "三、当前最大 AEO 问题")
+    _add_h1(doc, report.get("part3_problems", {}).get("title", _w(lang, 'report_title_suffix')))
 
     problems = report.get("part3_problems", {})
     for prob in problems.get("problems", []):
@@ -162,7 +169,7 @@ def generate_word(report: dict) -> bytes:
         run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # ===== 第四部分：Persona × Funnel × Use Case =====
-    _add_h1(doc, "四、Persona × Funnel × Use Case 内容机会")
+    _add_h1(doc, report.get("part4_content_opportunities", {}).get("title", _w(lang, 'report_title_suffix')))
 
     opportunities = report.get("part4_content_opportunities", {})
     p = doc.add_paragraph()
@@ -178,7 +185,7 @@ def generate_word(report: dict) -> bytes:
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-        headers = ["Persona", "Funnel", "Use Case", "AI 可能遇到的问题", "建议页面"]
+        headers = [_w(lang, 'sc_persona'), _w(lang, 'sc_funnel'), _w(lang, 'sc_use_case'), _w(lang, 'sc_ai_question'), _w(lang, 'sc_recommended_page')]
         for i, h in enumerate(headers):
             cell = table.rows[0].cells[i]
             cell.text = ""
@@ -205,7 +212,7 @@ def generate_word(report: dict) -> bytes:
                 run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # ===== 第五部分：优先页面 =====
-    _add_h1(doc, "五、最值得优先做的 20 个 AEO 页面")
+    _add_h1(doc, report.get("part5_priority_pages", {}).get("title", _w(lang, 'report_title_suffix')))
 
     priority = report.get("part5_priority_pages", {})
     for group in priority.get("groups", []):
@@ -221,20 +228,20 @@ def generate_word(report: dict) -> bytes:
     top5 = priority.get("top5", [])
     if top5:
         p = doc.add_paragraph()
-        run = p.add_run(f"优先级最高的 5 篇：{'、'.join(top5[:5])}。")
+        run = p.add_run(f"{_w(lang, 'top5_label')}{_w(lang, 'sep').join(top5[:5])}")
         run.bold = True
         run.font.size = Pt(11)
         run.font.name = 'Microsoft YaHei'
         run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # ===== 第六部分：页面模板 =====
-    _add_h1(doc, "六、页面重构模板")
+    _add_h1(doc, report.get("part6_page_template", {}).get("title", _w(lang, 'report_title_suffix')))
 
     template = report.get("part6_page_template", {})
     example = template.get("example", {})
 
     p = doc.add_paragraph()
-    run = p.add_run(f"示例页面：{example.get('page_title', '')}")
+    run = p.add_run(f"{_w(lang, 'example_page_label')}{example.get('page_title', '')}")
     run.bold = True
     run.font.size = Pt(12)
     run.font.name = 'Microsoft YaHei'
@@ -250,7 +257,7 @@ def generate_word(report: dict) -> bytes:
             run.font.name = 'Microsoft YaHei'
             run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
             p.paragraph_format.left_indent = Cm(0.5)
-        elif item["level"] == "对比表":
+        elif item["level"] in ("对比表", "Comparison Table"):
             p = doc.add_paragraph()
             run = p.add_run(f"📊 {item['content']}")
             run.font.size = Pt(11)
@@ -265,7 +272,7 @@ def generate_word(report: dict) -> bytes:
             run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # GEO 模板
-    _add_h2(doc, "GEO/AEO 内容模板")
+    _add_h2(doc, _w(lang, 'geo_template_label'))
     p = doc.add_paragraph()
     run = p.add_run(example.get("geo_template", ""))
     run.font.size = Pt(11)
@@ -273,7 +280,7 @@ def generate_word(report: dict) -> bytes:
     run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # ===== 第七部分：技术建议 =====
-    _add_h1(doc, "七、技术与抓取层面建议")
+    _add_h1(doc, report.get("part7_technical_suggestions", {}).get("title", _w(lang, 'report_title_suffix')))
 
     tech = report.get("part7_technical_suggestions", {})
     for item in tech.get("items", []):
@@ -285,7 +292,7 @@ def generate_word(report: dict) -> bytes:
         p.paragraph_format.left_indent = Cm(0.5)
 
     # ===== 第八部分：效果衡量 =====
-    _add_h1(doc, "八、AEO 效果衡量方式")
+    _add_h1(doc, report.get("part8_measurement", {}).get("title", _w(lang, 'report_title_suffix')))
 
     measurement = report.get("part8_measurement", {})
     p = doc.add_paragraph()
@@ -309,7 +316,7 @@ def generate_word(report: dict) -> bytes:
             run._element.rPr.rFonts.set(qn('w:eastAsia'), 'Microsoft YaHei')
 
     # ===== 第九部分：最终判断 =====
-    _add_h1(doc, "九、最终判断")
+    _add_h1(doc, report.get("part9_conclusion", {}).get("title", _w(lang, 'report_title_suffix')))
 
     conclusion = report.get("part9_conclusion", {})
     p = doc.add_paragraph()

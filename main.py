@@ -13,6 +13,7 @@ from pydantic import BaseModel, HttpUrl
 from analyzer.crawler import Crawler
 from analyzer.scorer import AEOScorer
 from analyzer.reporter import generate_report
+from analyzer.i18n_report import translate_report, WORD_I18N
 import store
 from payment import router as payment_router
 
@@ -54,6 +55,7 @@ scorer = AEOScorer()
 
 class AnalyzeRequest(BaseModel):
     url: str
+    lang: str = "zh-CN"
 
 
 @app.post("/analyze")
@@ -71,7 +73,7 @@ async def analyze(req: AnalyzeRequest):
     # 评分
     aeo_score = scorer.score(page_data)
 
-    # 生成报告
+    # 生成报告（规范为中文，按需翻译）
     report = generate_report(url, page_data, aeo_score)
 
     # 保存到内存缓存（无状态，重启后需重新分析）
@@ -83,14 +85,16 @@ async def analyze(req: AnalyzeRequest):
         "total_score": aeo_score.total_score,
         "grade": aeo_score.grade,
         "site_name": report["meta"]["site_name"],
+        "report": translate_report(report, req.lang),
     }
 
 
 @app.get("/report/{report_id}")
-async def get_report(report_id: str, type: str = Query("free", pattern="^(free|full)$")):
+async def get_report(report_id: str, type: str = Query("free", pattern="^(free|full)$"), lang: str = Query("zh-CN")):
     """获取报告内容
     - type=free: 返回前 1/3 内容（免费）
     - type=full: 返回完整内容（需验证支付）
+    - lang: zh-CN（默认）| en-US，按语言翻译后返回
     """
     report = await store.get_report(report_id)
     if not report:
@@ -98,7 +102,7 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
 
     full = report["full_report"]
     if type == "full":
-        return {"success": True, "data": full, "is_full": True}
+        return {"success": True, "data": translate_report(full, lang), "is_full": True}
 
     # 免费版：返回前 3 部分
     free_keys = ["meta", "part1_overview", "part2_advantages", "part3_problems", "dimension_details"]
@@ -106,23 +110,23 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
     free_data["meta"] = full.get("meta", {})
     return {
         "success": True,
-        "data": free_data,
+        "data": translate_report(free_data, lang),
         "is_full": False,
         "total_parts": 9,
         "free_parts": 3,
-        "message": "这是免费版本，包含前 3 部分内容。支付后可查看完整 9 部分报告并下载 Word 版本。",
+        "message": WORD_I18N.get(lang, WORD_I18N["zh-CN"])["free_message"],
     }
 
 
 @app.get("/report/{report_id}/word")
-async def download_word(report_id: str):
-    """下载 Word 版报告"""
+async def download_word(report_id: str, lang: str = Query("zh-CN")):
+    """下载 Word 版报告（按 lang 翻译）"""
     report = await store.get_report(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="报告不存在或已过期（请重新分析）")
 
     from word_generator import generate_word
-    doc_bytes = generate_word(report["full_report"])
+    doc_bytes = generate_word(translate_report(report["full_report"], lang), lang)
     site_name = report["full_report"]["meta"]["site_name"].replace(" ", "_")[:30]
     # ASCII 安全的文件名，避免编码问题
     ascii_name = "AEO_Report"

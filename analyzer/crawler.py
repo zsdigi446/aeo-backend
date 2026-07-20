@@ -178,6 +178,48 @@ class Crawler:
 
         return ""
 
+    def _extract_brand_from_title(self, title: str) -> str:
+        """从 title 中推断品牌名，处理 '品牌 | 描述' 和 '描述 | 品牌' 两种格式。"""
+        separators = [" | ", " - ", " — ", " – ", ": ", " · ", " / ", " \\ "]
+        candidates = []
+        for sep in separators:
+            if sep in title:
+                parts = [p.strip() for p in title.split(sep) if p.strip()]
+                for p in parts:
+                    candidates.append(p)
+
+        # 去重并保持顺序
+        seen = set()
+        unique = []
+        for c in candidates:
+            if c.lower() not in seen:
+                seen.add(c.lower())
+                unique.append(c)
+
+        def brand_score(text: str) -> int:
+            if not text or len(text) > 40:
+                return -1000
+            score = 0
+            words = text.split()
+            if 1 <= len(words) <= 3:
+                score += 30
+            if text.isupper():
+                score += 20
+            elif words and all(w[0].isupper() for w in words if w):
+                score += 15
+            generic = ["bed", "car", "seat", "cover", "product", "products", "home",
+                       "shop", "store", "buy", "official", "site", "website", "online",
+                       "welcome", "best"]
+            for w in words:
+                if w.lower().strip("s") in generic:
+                    score -= 25
+            if len(text) > 20:
+                score -= 10
+            return score
+
+        unique.sort(key=brand_score, reverse=True)
+        return unique[0] if unique and brand_score(unique[0]) > 0 else ""
+
     def _clean_brand(self, text: str) -> str:
         """清理品牌名：去首尾空白、截断过长文本。"""
         if not text:

@@ -46,17 +46,19 @@ async def get_report(report_id: str) -> Optional[dict]:
     return REPORTS_CACHE.get(report_id)
 
 
-async def create_order(report_id: str, amount: int = 199) -> dict:
-    """创建支付订单"""
+async def create_order(report_id: str, amount: int = 9900) -> dict:
+    """创建支付订单（order_id 同时作为微信的 out_trade_no）"""
     order_id = uuid.uuid4().hex[:16]
     async with _LOCK:
         ORDERS_CACHE[order_id] = {
             "order_id": order_id,
+            "out_trade_no": order_id,
             "report_id": report_id,
             "amount": amount,
             "status": "pending",
             "created_at": _now_iso(),
             "paid_at": None,
+            "transaction_id": None,
         }
     return ORDERS_CACHE[order_id]
 
@@ -70,16 +72,19 @@ async def verify_order(order_id: str) -> dict:
             "report_id": order["report_id"],
             "amount": order["amount"],
             "status": order["status"],
+            "transaction_id": order.get("transaction_id"),
         }
     return {"status": "not_found"}
 
 
-async def confirm_payment(order_id: str) -> bool:
-    """确认支付成功，更新订单状态"""
+async def confirm_payment(order_id: str, transaction_id: str = None) -> bool:
+    """确认支付成功，更新订单状态并记录微信交易号"""
     async with _LOCK:
         order = ORDERS_CACHE.get(order_id)
         if order and order["status"] == "pending":
             order["status"] = "paid"
             order["paid_at"] = _now_iso()
+            if transaction_id:
+                order["transaction_id"] = transaction_id
             return True
     return False

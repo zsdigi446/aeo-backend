@@ -18,6 +18,55 @@ PAY_AMOUNT = int(os.environ.get("WX_PAY_AMOUNT", "9900"))
 PRODUCT_DESC = os.environ.get("WX_PRODUCT_DESC", "AEO网站完整分析报告")
 
 
+@router.get("/debug/wx-config")
+async def debug_wx_config():
+    """诊断端点：检查微信支付相关环境变量是否配置正确（不泄露敏感值）"""
+    keys = [
+        "WX_PAY_ENABLED",
+        "WX_MCH_ID",
+        "WX_APP_ID",
+        "WX_API_V3_KEY",
+        "WX_SERIAL_NO",
+        "WX_PRIVATE_KEY",
+        "WX_PAY_AMOUNT",
+        "WX_PAY_NOTIFY_URL",
+        "WX_PRODUCT_DESC",
+    ]
+    result = {}
+    for k in keys:
+        v = os.environ.get(k, "")
+        # 只展示：是否存在、长度、首尾字符（不泄露完整值）
+        result[k] = {
+            "present": bool(v),
+            "length": len(v),
+            "preview": (v[:8] + "..." + v[-4:]) if len(v) > 12 else ("***" if v else ""),
+        }
+    # 最终判断
+    enabled_raw = os.environ.get("WX_PAY_ENABLED", "").lower()
+    all_secrets_ok = all([
+        os.environ.get("WX_MCH_ID"),
+        os.environ.get("WX_APP_ID"),
+        os.environ.get("WX_API_V3_KEY"),
+        os.environ.get("WX_SERIAL_NO"),
+        os.environ.get("WX_PRIVATE_KEY"),
+    ])
+    result["_diagnosis"] = {
+        "enabled_value_raw": enabled_raw,
+        "enabled_matches_true": enabled_raw == "true",
+        "all_5_secrets_present": all_secrets_ok,
+        "is_enabled_final": enabled_raw == "true" and all_secrets_ok,
+        "next_step": (
+            "✅ 微信支付已启用，下单应返回真实 code_url/h5_url"
+            if enabled_raw == "true" and all_secrets_ok
+            else (
+                f"❌ WX_PAY_ENABLED='{enabled_raw}'（需为精确的 'true'），"
+                f"或以下密钥缺失: {', '.join(k for k in ['WX_MCH_ID','WX_APP_ID','WX_API_V3_KEY','WX_SERIAL_NO','WX_PRIVATE_KEY'] if not os.environ.get(k))}"
+            )
+        ),
+    }
+    return result
+
+
 class CreateOrderRequest(BaseModel):
     report_id: str
     amount: int = PAY_AMOUNT

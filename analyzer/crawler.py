@@ -39,6 +39,25 @@ class PageData:
     status_code: int = 0
     error: str = ""
     main_content_length: int = 0
+    # ===== GEO 技术检查清单相关字段 =====
+    canonical_url: str = ""
+    robots_txt: str = ""           # 抓取的 robots.txt 内容（抓不到则为空）
+    bot_blocked: bool = False      # 是否显式 Disallow 了 GPTBot/Google-Extended/CCBot 等 AI 爬虫
+    has_sitemap: bool = False      # 是否能发现 sitemap
+    has_breadcrumb: bool = False   # 是否有面包屑导航 / BreadcrumbList schema
+    internal_link_count: int = 0
+    external_link_count: int = 0
+    same_as: list = field(default_factory=list)     # schema sameAs 权威平台
+    has_organization_schema: bool = False
+    has_faq_schema: bool = False
+    has_breadcrumb_schema: bool = False
+    has_article_schema: bool = False
+    has_howto_schema: bool = False
+    response_time_ms: float = 0.0  # 首字节响应耗时（TTFB 近似）
+    is_js_rendered: bool = False   # 原始 HTML 内容极少，疑似 JS 渲染（AI 难抓取）
+    has_login_wall: bool = False   # 疑似登录墙
+    soft_404: bool = False         # 疑似软 404（返回 200 但内容像“未找到”）
+    crawl_depth_ok: bool = True    # 关键内容是否无需登录即可访问
 
 
 class Crawler:
@@ -81,7 +100,9 @@ class Crawler:
                     headers=self._headers(),
                     verify=False,
                 ) as client:
+                    t0 = time.monotonic()
                     resp = await client.get(url)
+                    data.response_time_ms = round((time.monotonic() - t0) * 1000, 1)
                     data.status_code = resp.status_code
                     # 对 429/503/502/504 等限流或临时错误进行重试
                     if resp.status_code in (429, 503, 502, 504, 408) and attempt < self.max_retries - 1:
@@ -95,9 +116,10 @@ class Crawler:
                         return data
                     html = resp.text
                     soup = BeautifulSoup(html, "lxml")
+                    data._soup = soup
                     self._extract_basic_info(soup, data)
                     self._extract_headings(soup, data)
-                    self._extract_links(soup, data)
+                    self._extract_links(soup, data, url)
                     self._extract_images(soup, data)
                     self._extract_content(soup, data)
                     self._extract_schema(soup, data)
@@ -105,6 +127,9 @@ class Crawler:
                     self._extract_credibility(soup, data)
                     self._extract_comparison(soup, data)
                     self._extract_meta(soup, data)
+                    self._extract_geo_heuristics(soup, data, url, html)
+                    # 抓取 robots.txt 与 sitemap（尽力而为，失败不影响主流程）
+                    await self._extract_robots_and_sitemap(client, url, data)
                     return data
             except httpx.TimeoutException:
                 data.error = "请求超时"
@@ -237,7 +262,9 @@ class Crawler:
         data.h2_texts = [h.get_text(strip=True) for h in soup.find_all("h2")]
         data.h3_texts = [h.get_text(strip=True) for h in soup.find_all("h3")]
 
-    def _extract_links(self, soup, data):
+    def _extract_links(self, soup, data, url: str = ""):
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc.lower() if url else ""
         for a in soup.find_all("a", href=True):
             text = a.get_text(strip=True)
             href = a["href"]
@@ -246,6 +273,23 @@ class Crawler:
                 data.has_about_page_link = True
             if re.search(r"contact|联系", text, re.I) or re.search(r"contact|contact-us", href, re.I):
                 data.has_contact_info = True
+            # 内/外链统计（用于语义化内链评估）
+            low = href.lower()
+            if low.startswith("http"):
+                if domain and domain in low:
+                    data.internal_link_count += 1
+                else:
+                    data.external_link_count += 1
+            elif low.startswith("#") or low.startswith("javascript:") or low.startswith("mailto:") or low.startswith("tel:"):
+                pass
+            else:
+                data.internal_link_count += 1
+            # 面包屑导航检测
+            cls = " ".join(a.get("class", [])).lower()
+            par = a.parent
+            par_cls = " ".join(par.get("class", [])).lower() if par else ""
+            if "breadcrumb" in cls or "breadcrumb" in par_cls or a.get("aria-label", "").lower() == "breadcrumb":
+                data.has_breadcrumb = True
 
     def _extract_images(self, soup, data):
         for img in soup.find_all("img"):
@@ -275,9 +319,36 @@ class Crawler:
                 try:
                     sc = _json.loads(s.string)
                     items = sc if isinstance(sc, list) else [sc]
+                    # 支持 @graph 嵌套
+                    if isinstance(sc, dict) and isinstance(sc.get("@graph"), list):
+                        items = items + sc["@graph"]
                     for item in items:
-                        if isinstance(item, dict):
-                            data.schema_types.append(item.get("@type", "Unknown"))
+                        if not isinstance(item, dict):
+                            continue
+                        t = item.get("@type", "Unknown")
+                        if isinstance(t, list):
+                            for tt in t:
+                                data.schema_types.append(tt)
+                        else:
+                            data.schema_types.append(t)
+                        tset = set(t) if isinstance(t, list) else {t}
+                        if "Organization" in tset or "Brand" in tset:
+                            data.has_organization_schema = True
+                        if "FAQPage" in tset or "QAPage" in tset:
+                            data.has_faq_schema = True
+                        if "BreadcrumbList" in tset:
+                            data.has_breadcrumb_schema = True
+                            data.has_breadcrumb = True
+                        if "Article" in tset or "BlogPosting" in tset or "NewsArticle" in tset:
+                            data.has_article_schema = True
+                        if "HowTo" in tset:
+                            data.has_howto_schema = True
+                        # sameAs 权威平台
+                        sa = item.get("sameAs")
+                        if isinstance(sa, list):
+                            data.same_as.extend([str(x) for x in sa if x])
+                        elif isinstance(sa, str) and sa:
+                            data.same_as.append(sa)
                 except Exception:
                     pass
 
@@ -339,3 +410,92 @@ class Crawler:
         data.meta_robots = robots.get("content", "") if robots else ""
         viewport = soup.find("meta", attrs={"name": "viewport"})
         data.has_viewport_meta = viewport is not None
+        # canonical URL
+        canon = soup.find("link", attrs={"rel": "canonical"})
+        if canon and canon.get("href"):
+            data.canonical_url = canon["href"].strip()
+        else:
+            # 某些站点用 alternate canonical
+            alt = soup.find("link", attrs={"rel": lambda r: r and "canonical" in str(r).lower()})
+            if alt and alt.get("href"):
+                data.canonical_url = alt["href"].strip()
+
+    def _extract_geo_heuristics(self, soup, data, url: str, html: str):
+        """GEO 启发式：JS 渲染、登录墙、软 404、面包屑兜底。"""
+        text_len = len(data.body_text or "")
+        # JS 渲染启发式：原始 HTML 几乎无正文（疑似 SPA，AI 难以直接抓取到内容）
+        if text_len < 200 and len(html) > 5000:
+            data.is_js_rendered = True
+        # 登录墙启发式：出现登录/注册但无实质内容
+        low = (data.body_text or "").lower()
+        login_kw = ["sign in", "log in", "login", "登录", "注册", "sign up", "请先登录"]
+        if any(k in low for k in login_kw) and text_len < 400:
+            data.has_login_wall = True
+            data.crawl_depth_ok = False
+        # 软 404 启发式：状态码 200 但内容像“未找到”
+        notfound_kw = ["404", "not found", "页面不存在", "找不到页面", "page not found", "已删除", "不存在的页面"]
+        if data.status_code == 200 and any(k in low for k in notfound_kw) and text_len < 600:
+            data.soft_404 = True
+        # 面包屑兜底：nav/ol/ul 含 “首页 >” 或 breadcrumb 文本
+        if not data.has_breadcrumb:
+            for nav in soup.find_all(["nav", "ol", "ul"]):
+                cls = " ".join(nav.get("class", [])).lower()
+                txt = nav.get_text(" ", strip=True)
+                if "breadcrumb" in cls or ("首页" in txt and ">" in txt):
+                    data.has_breadcrumb = True
+                    break
+
+    async def _extract_robots_and_sitemap(self, client, url: str, data: PageData):
+        """抓取 robots.txt 与 sitemap（尽力而为）。"""
+        from urllib.parse import urlparse
+        try:
+            base = "{uri.scheme}://{uri.netloc}".format(uri=urlparse(url))
+        except Exception:
+            return
+        # 1) robots.txt
+        try:
+            r = await client.get(base + "/robots.txt", timeout=8)
+            if r.status_code == 200 and r.text:
+                data.robots_txt = r.text
+                low = r.text.lower()
+                # 显式 Disallow 了主流 AI 爬虫 -> 判定为屏蔽
+                ai_bots = ["gptbot", "google-extended", "ccbot", "applebot", "bingbot", "facebookbot"]
+                blocked = False
+                # 简单解析：每个 bot 段后的 Disallow
+                import io
+                cur = None
+                for line in r.text.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if ":" not in line:
+                        continue
+                    k, v = line.split(":", 1)
+                    k, v = k.strip().lower(), v.strip()
+                    if k == "user-agent":
+                        cur = v
+                    elif k == "disallow":
+                        if cur in ai_bots and v:
+                            blocked = True
+                        # 通配 * 且 disallow 非空
+                        if cur == "*" and v and any(b in ai_bots for b in []):
+                            pass
+                # 若 * 段全局 Disallow: / 也会拦截 AI 爬虫
+                if "user-agent: *" in low and "disallow: /" in low.replace(" ", ""):
+                    blocked = True
+                data.bot_blocked = blocked
+                # sitemap 行
+                if "sitemap:" in low:
+                    data.has_sitemap = True
+        except Exception:
+            pass
+        # 2) 尝试常见 sitemap 路径
+        if not data.has_sitemap:
+            for path in ("/sitemap.xml", "/sitemap_index.xml", "/sitemap.xml.gz"):
+                try:
+                    r = await client.get(base + path, timeout=8, follow_redirects=True)
+                    if r.status_code == 200 and ("<urlset" in r.text or "<sitemapindex" in r.text):
+                        data.has_sitemap = True
+                        break
+                except Exception:
+                    continue

@@ -43,6 +43,8 @@ def generate_report(url: str, page_data: PageData, aeo_score: AEOScore) -> dict:
         "part7_page_template": _build_part7_template(page_data, site_name, domain, industry),
         "part8_technical": _build_part8_technical(aeo_score, page_data, site_name),
         "part9_measurement": _build_part9_measurement(site_name, domain, industry),
+        "part10_geo_checklist": _build_part10_geo_checklist(aeo_score, page_data, site_name),
+        "geo_checklist": aeo_score.geo_checklist,
         "dimension_details": [{
             "name": dim.name,
             "score": dim.score,
@@ -413,29 +415,66 @@ def _build_part7_template(page_data, site_name, domain, industry):
 # Part 8: 技术与抓取层面建议
 # ============================================================================
 def _build_part8_technical(aeo_score, page_data, site_name):
+    """第八部分：基于 GEO 技术检查清单的逐项技术建议（通过/未通过）。"""
+    geo = aeo_score.geo_checklist
+    sections = geo.get("sections", []) if geo else []
+
+    # 把清单中未通过/需人工验证的项转成可执行建议
     items = []
+    for s in sections:
+        if s["status"] == "pass":
+            continue
+        if s["status"] == "manual":
+            items.append(f"【需人工验证】{s['name']}：{s['suggestions'][0] if s['suggestions'] else ''}")
+            continue
+        # fail：列出关键发现 + 第一条建议
+        head = s["findings"][0] if s["findings"] else ""
+        sug = s["suggestions"][0] if s["suggestions"] else ""
+        items.append(f"【{s['name']}】{head} → 建议：{sug}")
 
+    # 兜底通用建议（确保不空洞）
     if not page_data.has_schema:
-        items.append("为核心页面添加 Product、FAQPage、Breadcrumb、Organization、Article 等结构化数据标记——这是 AI 理解页面的关键信号")
-    if not page_data.has_viewport_meta:
-        items.append("添加 Viewport Meta 标签，确保移动端适配")
-    if not page_data.meta_description:
-        items.append("为每个页面添加独特的 Meta Description（50-160 字符）")
-    if not page_data.h2_texts:
-        items.append("添加 H2 子标题，建立清晰的标题层级结构（H1→H2→H3）")
-
+        items.append("为核心页面添加 Product、FAQPage、Breadcrumb、Organization、Article 等 JSON-LD 结构化数据——这是 AI 理解页面的关键信号")
     items.extend([
         "在首页、分类页和产品页首屏增加「直接回答型摘要」，让 AI 更快抓取核心信息",
-        "减少重复导航和促销文本对主内容抓取的干扰，让核心信息更靠前",
-        "优化图片 Alt 文本，使用具体、自然的描述而非只重复产品名",
-        "为博客和内容页统一添加作者信息、更新时间和数据来源",
         "将信任信号（评价、保障、退换政策）做成可读文本模块，而非仅用图标展示",
-        "优化页面加载速度，确保移动端 PageSpeed 评分 ≥ 70",
-        "提交 sitemap，确保 robots.txt 没有误拦截重要页面",
-        "修复 404 页面，优化站内链接结构",
+        "优化页面加载速度，确保 TTFB < 800ms、移动端体验良好",
+        "提交并维护 sitemap，确认 robots.txt 未误拦截 AI 爬虫（GPTBot / Google-Extended / CCBot）",
+        "修复 404、优化站内语义化内链结构",
     ])
 
-    return {"title": "八、技术与抓取层面建议", "items": items}
+    passed = geo.get("passed_count", 0)
+    auto = geo.get("auto_count", 0)
+    geo_score = geo.get("geo_score", 0)
+    summary = (f"GEO 技术检查：自动可检测的 {auto} 个大类中，{passed} 项通过，"
+               f"技术合规分约 {geo_score}/100。以下为待改进项：") if geo else "技术与抓取层面建议"
+
+    return {"title": "八、GEO 技术检查与抓取层面建议", "summary": summary, "items": items}
+
+
+def _build_part10_geo_checklist(aeo_score, page_data, site_name):
+    """第十部分：GEO 技术检查清单（11 大类完整呈现，供前端/Word 展示）。"""
+    geo = aeo_score.geo_checklist
+    if not geo:
+        return {"title": "十、GEO 技术检查清单", "sections": []}
+    sections_out = []
+    for s in geo.get("sections", []):
+        sections_out.append({
+            "key": s["key"],
+            "name": s["name"],
+            "status": s["status"],          # pass / fail / manual
+            "score": s["score"],
+            "findings": s["findings"],
+            "suggestions": s["suggestions"],
+        })
+    return {
+        "title": "十、GEO 技术检查清单（AI / LLM 引用优化）",
+        "principle": geo.get("principle", ""),
+        "passed_count": geo.get("passed_count", 0),
+        "auto_count": geo.get("auto_count", 0),
+        "geo_score": geo.get("geo_score", 0),
+        "sections": sections_out,
+    }
 
 
 # ============================================================================

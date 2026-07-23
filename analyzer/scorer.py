@@ -34,6 +34,8 @@ class AEOScore:
     core_judgment: str = ""
     # 新增：内容类型覆盖分析
     content_type_coverage: dict = field(default_factory=dict)
+    # 新增：GEO 技术检查清单（11 大类逐项）
+    geo_checklist: dict = field(default_factory=dict)
 
 
 class AEOScorer:
@@ -58,6 +60,7 @@ class AEOScorer:
         summary = self._summary(total, grade, dims)
         core_judgment = self._core_judgment(total, grade, dims, d)
         content_type_coverage = self._content_type_coverage(d)
+        geo_checklist = self._geo_checklist(d)
 
         return AEOScore(
             total_score=total,
@@ -66,6 +69,7 @@ class AEOScorer:
             grade=grade,
             core_judgment=core_judgment,
             content_type_coverage=content_type_coverage,
+            geo_checklist=geo_checklist,
         )
 
     # ========================================================================
@@ -173,6 +177,23 @@ class AEOScorer:
             else:
                 continue
             break
+
+        # 8. GEO 内容格式：事实用列表 / 表格呈现（AI 更易提取）
+        import bs4 as _bs4
+        table_count = len(d._soup.find_all("table")) if hasattr(d, "_soup") and d._soup else 0
+        list_count = len(d._soup.find_all(["ul", "ol"])) if hasattr(d, "_soup") and d._soup else 0
+        if table_count >= 1 or list_count >= 3:
+            score += 6
+            details.append(f"✅ 使用列表/表格呈现事实（{list_count} 个列表 / {table_count} 个表格），AI 可提取性强")
+        else:
+            suggestions.append("建议多用列表、表格、短句呈现关键事实——GEO 强调「提升可提取性」，结构化事实最易被 AI 引用")
+
+        # 9. GEO 内容格式：避免冗长铺垫（关键信息靠前）
+        if d.paragraphs and len(d.paragraphs[0]) <= 120:
+            score += 4
+            details.append("✅ 开头无冗长铺垫，关键信息靠前（符合 AI 提取习惯）")
+        elif d.paragraphs and len(d.paragraphs[0]) > 300:
+            suggestions.append("开头段落过长（>300 字），GEO 建议「关键信息靠前、避免冗长铺垫」")
 
         return DimScore(name="内容结构", score=min(score, 100), weight=self.WEIGHTS["content_structure"],
                         details=details, suggestions=suggestions)
@@ -313,76 +334,153 @@ class AEOScorer:
                       r"根据", r"according to", r"来源", r"source"]
         if any(re.search(p, text, re.I) for p in data_pats):
             score += 15
-            details.append("✅ 检测到数据/研究引用")
+            details.append("✅ 检测到数据/研究引用（Ground Truth 信号）")
         else:
-            suggestions.append("建议引用行业数据或研究报告增强权威性")
+            suggestions.append("建议引用行业数据或研究报告增强权威性（GEO 强调「证明真实性」）")
+
+        # 7. E-E-A-T：跨平台权威一致性（sameAs）
+        if d.same_as:
+            score += 10
+            platforms = []
+            for u in d.same_as[:5]:
+                if "linkedin" in u: platforms.append("LinkedIn")
+                elif "github" in u: platforms.append("GitHub")
+                elif "twitter" in u or "x.com" in u: platforms.append("X")
+                elif "wikipedia" in u: platforms.append("Wikipedia")
+                elif "youtube" in u: platforms.append("YouTube")
+                elif "zhihu" in u: platforms.append("知乎")
+                else: platforms.append("其他权威平台")
+            details.append(f"✅ schema sameAs 指向权威平台：{', '.join(dict.fromkeys(platforms))}")
+        else:
+            suggestions.append("建议在 Organization schema 中用 sameAs 指向 LinkedIn / GitHub / 官网等权威平台，建立跨平台品牌一致性（E-E-A-T）")
+
+        # 8. 新鲜度 Freshness：更新时间信号
+        if d.has_publish_date:
+            score += 5
+            details.append("✅ 有发布/更新时间信号（Freshness）")
+        else:
+            suggestions.append("建议展示内容更新时间，并制定 6–12 个月的内容维护计划（GEO Freshness）")
 
         return DimScore(name="可信度信号", score=min(score, 100), weight=self.WEIGHTS["credibility"],
                         details=details, suggestions=suggestions)
 
     # ========================================================================
-    # 维度四：技术基础 (15%)
+    # 维度四：GEO 技术基础（可抓取性 / 规范化 / 结构化 / 性能）(15%)
+    # 对齐《GEO 技术检查清单》：Crawlability / Indexability / Structured Data / IA / Performance
     # ========================================================================
     def _score_technical_basis(self, d: PageData) -> DimScore:
         score = 0
         details = []
         suggestions = []
 
-        # 1. Schema 结构化数据
-        if d.has_schema:
-            score += 30
-            types_str = ", ".join(d.schema_types[:3]) if d.schema_types else "已部署"
-            details.append(f"✅ 检测到 Schema 标记（{types_str}）")
+        # --- 1. 可抓取性 Crawlability & Accessibility ---
+        if d.bot_blocked:
+            suggestions.append("⚠️ robots.txt 显式 Disallow 了 GPTBot / Google-Extended / CCBot 等 AI 爬虫——AI 根本无法抓取你的内容，这是 GEO 最致命的问题")
         else:
-            suggestions.append("建议添加 Schema 结构化数据标记（Organization/Product/FAQPage/Article 等）——这是 AI 理解页面的关键信号")
-
-        # 2. Meta Description
-        if d.meta_description:
-            score += 15
-            if 50 <= len(d.meta_description) <= 160:
-                score += 5
-                details.append("✅ Meta Description 长度合理（50-160 字符）")
-            else:
-                suggestions.append("Meta Description 长度建议在 50-160 字符之间")
+            score += 12
+            details.append("✅ 未拦截主流 AI 爬虫（GPTBot / Google-Extended / CCBot）")
+        if d.is_js_rendered:
+            suggestions.append("⚠️ 页面疑似纯 JS 渲染（原始 HTML 几乎无正文），AI 爬虫难以直接提取内容——建议提供 SSR / 静态渲染版本")
         else:
-            suggestions.append("缺少 Meta Description，建议添加")
-
-        # 3. H1 标题（SEO 基础）
-        if d.h1_texts:
-            score += 15
-            details.append("✅ 有 H1 标题（SEO 基础）")
-        else:
-            suggestions.append("缺少 H1 标签")
-
-        # 4. 标题层级完整性
-        if d.h2_texts:
-            score += 10
-            details.append("✅ 标题层级结构完整（H1+H2）")
-        else:
-            suggestions.append("缺少 H2 标签，标题层级不完整")
-
-        # 5. 可索引性
-        if "noindex" not in d.meta_robots.lower():
-            score += 10
-            details.append("✅ 页面可被索引")
-        else:
-            score += 3
-            suggestions.append("页面设置了 noindex，AI 和搜索引擎无法收录")
-
-        # 6. HTTP 状态
+            score += 6
+            details.append("✅ 关键内容在原始 HTML 中即可见（SSR / 静态渲染友好）")
+        if d.has_login_wall:
+            suggestions.append("⚠️ 检测到疑似登录墙，核心内容需登录才能访问——AI 无法抓取，需提供公开可访问版本")
+        if d.soft_404:
+            suggestions.append("⚠️ 疑似软 404（返回 200 但内容像“未找到”），AI 可能误收录空页面")
         if d.status_code == 200:
-            score += 10
+            score += 6
             details.append("✅ HTTP 状态正常（200）")
         else:
             suggestions.append(f"HTTP 状态码 {d.status_code} 异常")
 
-        # 7. 内容层次丰富度
-        all_headings = d.h1_texts + d.h2_texts + d.h3_texts
-        if len(all_headings) >= 5:
-            score += 5
-            details.append("✅ 内容层次丰富（≥5 个标题）")
+        # --- 2. 索引与规范化 Indexability & Canonical ---
+        if d.canonical_url:
+            score += 8
+            details.append("✅ 设置了 Canonical URL（主题规范化）")
+        else:
+            suggestions.append("建议为页面设置 <link rel=\"canonical\">，避免重复 URL 稀释主题信号")
+        if "noindex" not in d.meta_robots.lower():
+            score += 6
+            details.append("✅ 页面允许被索引（无 noindex）")
+        else:
+            score += 2
+            suggestions.append("页面设置了 noindex，AI 和搜索引擎无法收录")
+        if d.has_sitemap:
+            score += 6
+            details.append("✅ 检测到可访问的 sitemap（利于 AI / 搜索引擎发现内容）")
+        else:
+            suggestions.append("建议提供并维护 XML sitemap，确保内容可被持续发现和收录")
 
-        return DimScore(name="技术基础", score=min(score, 100), weight=self.WEIGHTS["technical_basis"],
+        # --- 3. 结构化数据 Structured Data（JSON-LD）---
+        if d.has_schema:
+            score += 12
+            types_str = ", ".join([t for t in d.schema_types if t != "Unknown"][:4]) or "已部署"
+            details.append(f"✅ 检测到 JSON-LD 结构化数据（{types_str}）")
+            # GEO 关键 schema 子类型
+            geo_schema_hits = []
+            if d.has_organization_schema:
+                geo_schema_hits.append("Organization")
+            if d.has_faq_schema:
+                geo_schema_hits.append("FAQPage")
+            if d.has_breadcrumb_schema:
+                geo_schema_hits.append("BreadcrumbList")
+            if d.has_article_schema:
+                geo_schema_hits.append("Article")
+            if d.has_howto_schema:
+                geo_schema_hits.append("HowTo")
+            if geo_schema_hits:
+                score += min(len(geo_schema_hits) * 3, 12)
+                details.append(f"✅ 含 GEO 关键 schema 类型：{', '.join(geo_schema_hits)}")
+            else:
+                suggestions.append("建议补充 FAQPage / Organization / BreadcrumbList / Article 等 schema，让 AI 更结构化地理解内容")
+        else:
+            suggestions.append("建议添加 JSON-LD 结构化数据（Organization / Product / FAQPage / Article 等）——这是 AI 理解页面的关键信号")
+
+        # --- 4. 信息架构 Information Architecture ---
+        if d.has_breadcrumb:
+            score += 6
+            details.append("✅ 有面包屑导航 / BreadcrumbList（清晰的信息架构）")
+        else:
+            suggestions.append("建议添加面包屑导航，强化页面在站点主题层级中的位置信号")
+        total_links = d.internal_link_count + d.external_link_count
+        if total_links > 0:
+            internal_ratio = d.internal_link_count / total_links
+            if internal_ratio >= 0.5:
+                score += 5
+                details.append(f"✅ 语义化内链比例健康（内链 {d.internal_link_count} / 总 {total_links}）")
+            else:
+                suggestions.append(f"外链占比偏高（内链 {d.internal_link_count} / 外链 {d.external_link_count}），建议加强站内语义化内链")
+
+        # --- 5. 性能与体验 Performance & UX ---
+        if d.response_time_ms:
+            if d.response_time_ms < 800:
+                score += 8
+                details.append(f"✅ 响应速度快（TTFB ≈ {d.response_time_ms:.0f}ms）")
+            elif d.response_time_ms < 2000:
+                score += 4
+                details.append(f"✅ 响应速度可接受（TTFB ≈ {d.response_time_ms:.0f}ms）")
+            else:
+                suggestions.append(f"响应较慢（TTFB ≈ {d.response_time_ms:.0f}ms），AI 与用户抓取体验都会下降，建议优化")
+        if d.has_viewport_meta:
+            score += 5
+            details.append("✅ 响应式设计（Viewport）")
+        else:
+            suggestions.append("建议添加 Viewport meta，保证移动端可被正常抓取与渲染")
+
+        # --- 6. 基础 SEO 结构 ---
+        if d.h1_texts and d.h2_texts:
+            score += 5
+            details.append("✅ 标题层级结构完整（H1+H2）")
+        elif d.h1_texts:
+            score += 2
+        else:
+            suggestions.append("缺少 H1 标签，AI 难以判断页面主题")
+        if d.meta_description:
+            score += 3
+            details.append("✅ 有 Meta Description")
+
+        return DimScore(name="GEO 技术基础", score=min(score, 100), weight=self.WEIGHTS["technical_basis"],
                         details=details, suggestions=suggestions)
 
     # ========================================================================
@@ -513,4 +611,255 @@ class AEOScorer:
             "use_case": any(kw in all_text for kw in ["场景", "用例", "use case", "workflow", "如果你"]),
             "case_study": d.has_testimonials,
             "faq": d.has_faq,
+        }
+
+    # ========================================================================
+    # GEO 技术检查清单（11 大类，逐项通过/未通过）
+    # 对齐用户提供的《GEO 技术检查清单（AI / LLM 排名与引用优化）》
+    # ========================================================================
+    def _geo_checklist(self, d: PageData) -> dict:
+        """返回 11 个 GEO 技术检查大类，每个含 status/passed/score/findings/suggestions。"""
+
+        def section(key, name, passed, score, findings, suggestions):
+            status = "pass" if passed is True else ("fail" if passed is False else "manual")
+            return {
+                "key": key, "name": name, "status": status,
+                "passed": passed, "score": score,
+                "findings": findings, "suggestions": suggestions,
+            }
+
+        all_headings = d.h1_texts + d.h2_texts + d.h3_texts
+        total_links = d.internal_link_count + d.external_link_count
+
+        # 1. Crawlability & Accessibility
+        c_find, c_sug, c_pass = [], [], True
+        if d.bot_blocked:
+            c_find.append("robots.txt 拦截了 GPTBot / Google-Extended / CCBot 等 AI 爬虫")
+            c_pass = False
+        else:
+            c_find.append("未拦截主流 AI 爬虫")
+        if d.is_js_rendered:
+            c_find.append("页面疑似纯 JS 渲染，原始 HTML 无正文，AI 难抓取")
+            c_pass = False
+        else:
+            c_find.append("关键内容在原始 HTML 中可见（SSR/静态渲染友好）")
+        if d.has_login_wall:
+            c_find.append("疑似登录墙，核心内容需登录")
+            c_pass = False
+        if d.soft_404:
+            c_find.append("疑似软 404")
+            c_pass = False
+        if d.status_code != 200:
+            c_find.append(f"HTTP 状态码异常：{d.status_code}")
+            c_pass = False
+        c_score = 100 if c_pass else (40 if (d.bot_blocked or d.is_js_rendered) else 70)
+        s1 = section("crawlability", "1. 可抓取性 Crawlability & Accessibility",
+                     c_pass, c_score, c_find,
+                     ["确保 robots.txt 允许 GPTBot / Google-Extended / CCBot",
+                      "关键内容使用 SSR / 静态渲染，避免纯客户端渲染",
+                      "核心内容无需登录即可访问", "避免软 404（无内容却返回 200）"])
+
+        # 2. Indexability & Canonical
+        i_find, i_pass = [], True
+        if d.canonical_url:
+            i_find.append(f"已设置 Canonical：{d.canonical_url[:60]}")
+        else:
+            i_find.append("缺少 Canonical URL"); i_pass = False
+        if "noindex" in d.meta_robots.lower():
+            i_find.append("设置了 noindex，禁止收录"); i_pass = False
+        else:
+            i_find.append("未被 noindex 屏蔽")
+        if d.has_sitemap:
+            i_find.append("检测到可访问 sitemap")
+        else:
+            i_find.append("未发现 sitemap"); i_pass = False
+        s2 = section("indexability", "2. 索引与规范化 Indexability & Canonical",
+                     True if i_pass else False, 100 if i_pass else 50, i_find,
+                     ["每个主题只保留一个 canonical URL",
+                      "清理重复 URL（参数 / http-https）",
+                      "分页与筛选页正确 canonical",
+                      "维护可访问的 XML sitemap"])
+
+        # 3. Information Architecture
+        ia_find, ia_pass = [], True
+        if d.h1_texts and d.h2_texts and d.h3_texts:
+            ia_find.append("标题层级 H1→H2→H3 完整")
+        elif d.h1_texts and d.h2_texts:
+            ia_find.append("有 H1+H2，但缺少 H3 细分")
+        else:
+            ia_find.append("标题层级不完整"); ia_pass = False
+        if d.has_breadcrumb:
+            ia_find.append("有面包屑导航 / BreadcrumbList")
+        else:
+            ia_find.append("缺少面包屑导航"); ia_pass = False
+        if total_links > 0 and d.internal_link_count / total_links >= 0.5:
+            ia_find.append("语义化内链比例健康")
+        else:
+            ia_find.append("站内语义化内链偏弱"); ia_pass = False
+        s3 = section("information_architecture", "3. 信息架构 Information Architecture",
+                     True if ia_pass else False, 100 if ia_pass else 55, ia_find,
+                     ["单页只解决一个核心主题",
+                      "清晰的 H1→H2→H3 结构",
+                      "建设 Topic Cluster（Hub→Spoke）",
+                      "添加面包屑与语义化内链"])
+
+        # 4. Structured Data
+        sd_find, sd_pass = [], d.has_schema
+        if d.has_schema:
+            sd_find.append(f"已部署 JSON-LD（{', '.join([t for t in d.schema_types if t!='Unknown'][:4]) or '已部署'}）")
+            sub = [t for t in ["Organization","FAQPage","BreadcrumbList","Article","HowTo"]
+                   if getattr(d, f"has_{t.lower()}_schema", False)]
+            if sub:
+                sd_find.append(f"含 GEO 关键 schema：{', '.join(sub)}")
+            else:
+                sd_find.append("缺少 FAQPage / Organization / BreadcrumbList 等关键类型")
+        else:
+            sd_find.append("未检测到任何结构化数据"); sd_pass = False
+        s4 = section("structured_data", "4. 结构化数据 Structured Data",
+                     True if sd_pass else False, 100 if sd_pass else 30, sd_find,
+                     ["使用 JSON-LD 而非微数据",
+                      "部署 Article / FAQPage / HowTo / Organization 等",
+                      "FAQ schema 须与页面内容一致",
+                      "Organization 用 sameAs 指向权威平台"])
+
+        # 5. Content Formatting（AI 可提取格式）
+        cf_find, cf_pass = [], True
+        if d.has_faq:
+            cf_find.append("有 FAQ / 自然问答结构")
+        else:
+            cf_find.append("缺少 FAQ 自然问答"); cf_pass = False
+        import bs4 as _bs4
+        tables = len(d._soup.find_all("table")) if hasattr(d, "_soup") and d._soup else 0
+        lists = len(d._soup.find_all(["ul", "ol"])) if hasattr(d, "_soup") and d._soup else 0
+        if tables >= 1 or lists >= 3:
+            cf_find.append(f"使用列表/表格呈现事实（{lists} 列表 / {tables} 表格）")
+        else:
+            cf_find.append("关键事实未用列表/表格结构化"); cf_pass = False
+        if d.paragraphs and len(d.paragraphs[0]) <= 300:
+            cf_find.append("开头关键信息靠前，无冗长铺垫")
+        else:
+            cf_find.append("开头铺垫偏长，建议关键信息前置"); cf_pass = False
+        s5 = section("content_formatting", "5. 内容格式 Content Formatting（AI 可提取）",
+                     True if cf_pass else False, 100 if cf_pass else 55, cf_find,
+                     ["定义性内容简洁明确",
+                      "用列表 / 表格呈现事实",
+                      "FAQ 使用自然问答",
+                      "关键信息靠前、避免冗长铺垫"])
+
+        # 6. Ground Truth & Trust
+        gt_find, gt_pass = [], True
+        if d.has_author_info:
+            gt_find.append("有作者 / 团队信息")
+        else:
+            gt_find.append("缺少作者 / 团队信息"); gt_pass = False
+        if d.has_publish_date:
+            gt_find.append("有发布 / 更新时间")
+        else:
+            gt_find.append("缺少更新时间"); gt_pass = False
+        if d.has_about_page_link:
+            gt_find.append("有关于 / 团队页面")
+        else:
+            gt_find.append("缺少 About / 团队页面"); gt_pass = False
+        if any(re.search(p, d.body_text.lower(), re.I) for p in [r"数据", r"研究", r"根据", r"来源", r"according to", r"source"]):
+            gt_find.append("有数据 / 来源说明")
+        else:
+            gt_find.append("缺少方法论 / 来源说明"); gt_pass = False
+        s6 = section("ground_truth", "6. 可信内容 Ground Truth & Trust",
+                     True if gt_pass else False, 100 if gt_pass else 50, gt_find,
+                     ["提供原创数据或一手经验",
+                      "标注方法论与来源",
+                      "显示更新时间",
+                      "清晰展示作者 / 组织与 About / 编辑方针页"])
+
+        # 7. E-E-A-T
+        ee_find, ee_pass = [], True
+        if d.has_author_info:
+            ee_find.append("有作者背景 / 专业度信号")
+        else:
+            ee_find.append("缺少作者专业度信号"); ee_pass = False
+        if d.has_organization_schema:
+            ee_find.append("有 Organization schema")
+        else:
+            ee_find.append("缺少 Organization schema"); ee_pass = False
+        if d.same_as:
+            ee_find.append(f"sameAs 指向 {len(d.same_as)} 个权威平台")
+        else:
+            ee_find.append("缺少跨平台品牌一致性（sameAs）"); ee_pass = False
+        s7 = section("eeat", "7. E-E-A-T 信号",
+                     True if ee_pass else False, 100 if ee_pass else 55, ee_find,
+                     ["展示作者背景与专业资质",
+                      "部署 Organization schema",
+                      "跨平台品牌命名一致",
+                      "避免夸大与 clickbait 标题"])
+
+        # 8. Performance & UX
+        pu_find, pu_pass = [], True
+        if d.response_time_ms:
+            if d.response_time_ms < 2000:
+                pu_find.append(f"响应速度良好（TTFB ≈ {d.response_time_ms:.0f}ms）")
+            else:
+                pu_find.append(f"响应较慢（TTFB ≈ {d.response_time_ms:.0f}ms）"); pu_pass = False
+        if d.has_viewport_meta:
+            pu_find.append("移动端友好（Viewport）")
+        else:
+            pu_find.append("缺少 Viewport，移动端体验差"); pu_pass = False
+        if d.h1_texts and d.h2_texts:
+            pu_find.append("语义化标题结构清晰")
+        else:
+            pu_find.append("HTML 语义化不足"); pu_pass = False
+        s8 = section("performance_ux", "8. 性能与体验 Performance & UX",
+                     True if pu_pass else False, 100 if pu_pass else 60, pu_find,
+                     ["Core Web Vitals 达标",
+                      "TTFB 快（< 800ms 最佳）",
+                      "无干扰式弹窗",
+                      "移动端友好 + HTML 语义化 / 可访问性"])
+
+        # 9. External Authority（站外权威）—— 部分可自动判断
+        ea_find, ea_pass = True, True
+        if d.same_as:
+            ea_find = [f"schema sameAs 已指向 {len(d.same_as)} 个平台"]
+        else:
+            ea_find = ["未在站内发现权威平台引用（Reddit / GitHub / 媒体 / Wikipedia 等）"]
+            ea_pass = False
+        s9 = section("external_authority", "9. 站外权威 External Authority",
+                     True if ea_pass else False, 100 if ea_pass else 50, ea_find,
+                     ["争取 Reddit / GitHub / Quora 提及",
+                      "获得编辑型媒体引用",
+                      "品牌命名跨平台一致",
+                      "建立 Wikipedia / Wikidata 词条（如适用）"])
+
+        # 10. AI Visibility Testing —— 需人工验证
+        s10 = section("ai_visibility", "10. AI 可见度测试 AI Visibility Testing",
+                      None, None,
+                      ["需在 ChatGPT / Perplexity / Gemini 中实际测试品牌相关问题",
+                       "记录是否被引用、以什么口径被引用",
+                       "与竞品对比引用份额"],
+                      ["每月固定测试 5–10 个核心 prompt",
+                       "记录品牌是否被 AI 引用",
+                       "与竞品对比引用份额并按月跟踪"])
+
+        # 11. Freshness
+        fr_find, fr_pass = [], d.has_publish_date
+        if d.has_publish_date:
+            fr_find.append("页面有发布 / 更新时间信号")
+        else:
+            fr_find.append("无更新时间信号"); fr_pass = False
+        fr_find.append("内容更新节奏（6–12 个月）需人工维护确认")
+        s11 = section("freshness", "11. 内容维护 Freshness",
+                      True if fr_pass else False, 100 if fr_pass else 60, fr_find,
+                      ["每 6–12 个月更新一次核心内容",
+                       "合并或更新过期内容",
+                       "保留高价值 URL",
+                       "基于真实用户问题补充 FAQ"])
+
+        sections = [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11]
+        auto = [s for s in sections if s["status"] != "manual"]
+        passed = sum(1 for s in auto if s["status"] == "pass")
+        geo_score = round(sum(s["score"] for s in auto if s["score"] is not None) / len(auto)) if auto else 0
+        return {
+            "sections": sections,
+            "passed_count": passed,
+            "auto_count": len(auto),
+            "geo_score": geo_score,
+            "principle": "AI 不做传统排名，而是选择它信任的来源来构建答案。GEO 的本质是：降低歧义、提升可提取性、建立权威、证明真实性。",
         }

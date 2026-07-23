@@ -426,7 +426,10 @@ TITLE_EN = {
     '六、最值得优先做的 AEO 页面': 'VI. Top-Priority AEO Pages to Build',
     '七、页面重构模板': 'VII. Page Restructuring Template',
     '八、技术与抓取层面建议': 'VIII. Technical & Crawl Recommendations',
+    '八、GEO 技术检查与抓取层面建议': 'VIII. GEO Technical & Crawl Recommendations',
     '九、AEO 效果衡量方式': 'IX. AEO Effect Measurement Methods',
+    '十、GEO 技术检查清单（AI / LLM 引用优化）': 'X. GEO Technical Checklist (AI / LLM Citation Optimization)',
+    '十、GEO 技术检查清单': 'X. GEO Technical Checklist',
 }
 GROUP_NAME_EN = {
     '第一组：对比类页面': 'Group 1: Comparison Pages',
@@ -464,7 +467,7 @@ WORD_I18N = {
         'example_page_label': '示例页面：',
         'geo_template_label': 'GEO/AEO 内容模板',
         'sep': '、',
-        'free_message': '这是免费版本，包含前 4 部分内容。支付后可查看完整 9 部分报告并下载 Word 版本。',
+        'free_message': '这是免费版本，包含前 4 部分内容。支付后可查看完整 10 部分报告并下载 Word 版本。',
         'eight_elements_label': '每篇 AI 可引用页面的八个要素：',
     },
     'en-US': {
@@ -486,7 +489,7 @@ WORD_I18N = {
         'example_page_label': 'Example Page: ',
         'geo_template_label': 'GEO/AEO Content Template',
         'sep': ', ',
-        'free_message': 'This is the free version, containing the first 4 parts. After payment you can view the full 9-part report and download the Word version.',
+        'free_message': 'This is the free version, containing the first 4 parts. After payment you can view the full 10-part report and download the Word version.',
         'eight_elements_label': 'Eight Elements of an AI-Citable Page:',
     },
 }
@@ -676,6 +679,14 @@ def translate_report(report: dict, lang: str) -> dict:
                 }
                 for d in p9['dimensions']
             ]
+
+    # ---- Part 10: GEO 技术检查清单 ----
+    p10 = r.get('part10_geo_checklist')
+    if p10:
+        if p10.get('title') in TITLE_EN:
+            p10['title'] = TITLE_EN[p10['title']]
+        if p10.get('principle'):
+            p10['principle'] = translate_string(p10['principle'])
 
     # ---- dimension_details ----
     if r.get('dimension_details'):

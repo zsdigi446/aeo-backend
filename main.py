@@ -106,18 +106,85 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
     if type == "full":
         return {"success": True, "data": translate_report(full, lang), "is_full": True}
 
-    # 免费版：返回前 3 部分
+    # 免费版：翻译整份报告后取前 4 部分，并为其余锁定部分生成「标题 + 近 3 行」预览
+    translated = translate_report(full, lang)
     free_keys = ["meta", "part1_core_judgment", "part2_advantages", "part3_problems", "part4_content_coverage", "dimension_details"]
-    free_data = {k: full[k] for k in free_keys if k in full}
-    free_data["meta"] = full.get("meta", {})
+    free_data = {k: translated[k] for k in free_keys if k in translated}
+    free_data["meta"] = translated.get("meta", {})
+    locked_preview = _build_locked_preview(translated)
     return {
         "success": True,
-        "data": translate_report(free_data, lang),
+        "data": free_data,
         "is_full": False,
-        "total_parts": 9,
+        "total_parts": 10,
         "free_parts": 4,
+        "locked_preview": locked_preview,
         "message": WORD_I18N.get(lang, WORD_I18N["zh-CN"])["free_message"],
     }
+
+
+def _build_locked_preview(full: dict) -> list:
+    """为免费版构建「锁定章节」预览：每项展示标题 + 近 3 行内容，其余内容需解锁后可见。"""
+    LOCKED_KEYS = [
+        "part5_opportunities", "part6_priority_pages", "part7_page_template",
+        "part8_technical", "part9_measurement", "part10_geo_checklist",
+    ]
+    previews = []
+    for key in LOCKED_KEYS:
+        part = full.get(key)
+        if not isinstance(part, dict):
+            continue
+        title = part.get("title", key)
+        lines: list = []
+
+        if key == "part5_opportunities":
+            if part.get("description"):
+                lines.append(part["description"])
+            for sc in (part.get("scenarios") or [])[:1]:
+                q = sc.get("ai_question", "")
+                p = sc.get("page", "")
+                if q or p:
+                    lines.append(f"{q} → {p}".strip(" →"))
+
+        elif key == "part6_priority_pages":
+            if part.get("description"):
+                lines.append(part["description"])
+            for pg in (part.get("top5") or [])[:2]:
+                lines.append(pg)
+
+        elif key == "part7_page_template":
+            if part.get("description"):
+                lines.append(part["description"])
+            ex = part.get("example") or {}
+            if ex.get("page_title"):
+                lines.append(ex["page_title"])
+            structure = ex.get("structure") or []
+            if len(structure) > 1:
+                lines.append(structure[1].get("content", ""))
+
+        elif key == "part8_technical":
+            if part.get("summary"):
+                lines.append(part["summary"])
+            for it in (part.get("items") or [])[:2]:
+                lines.append(it)
+
+        elif key == "part9_measurement":
+            if part.get("description"):
+                lines.append(part["description"])
+            for d in (part.get("dimensions") or [])[:1]:
+                lines.append(f"{d.get('name', '')}：{d.get('description', '')}".strip(" ："))
+
+        elif key == "part10_geo_checklist":
+            if part.get("principle"):
+                lines.append(part["principle"])
+            for s in (part.get("sections") or [])[:2]:
+                lines.append(f"{s.get('name', '')}（{s.get('status', '')}）")
+
+        # 清洗空白行并截断到 3 行
+        lines = [str(ln).strip() for ln in lines if ln and str(ln).strip()]
+        lines = lines[:3]
+        previews.append({"key": key, "title": title, "preview": lines})
+    return previews
 
 
 @app.get("/report/{report_id}/word")

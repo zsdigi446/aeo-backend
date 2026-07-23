@@ -21,7 +21,9 @@ from analyzer.scorer import AEOScore, DimScore
 def generate_report(url: str, page_data: PageData, aeo_score: AEOScore) -> dict:
     domain = _extract_domain(url)
     brand_name = page_data.brand_name or _extract_brand_from_domain(domain)
-    site_name = brand_name
+    # 使用更像「产品/品牌」的短名称，避免把完整公司法人名/网址硬塞进标题和正文
+    site_name = _derive_product_name(brand_name, domain)
+    product_name = site_name
     industry = _guess_industry(page_data)
 
     report = {
@@ -38,11 +40,11 @@ def generate_report(url: str, page_data: PageData, aeo_score: AEOScore) -> dict:
         "part2_advantages": _build_part2_advantages(aeo_score, page_data, site_name),
         "part3_problems": _build_part3_problems(aeo_score, page_data, site_name),
         "part4_content_coverage": _build_part4_content_coverage(aeo_score, page_data, site_name),
-        "part5_opportunities": _build_part5_opportunities(page_data, site_name, domain, industry),
-        "part6_priority_pages": _build_part6_priority_pages(page_data, site_name, domain, industry),
-        "part7_page_template": _build_part7_template(page_data, site_name, domain, industry),
+        "part5_opportunities": _build_part5_opportunities(page_data, product_name, domain, industry),
+        "part6_priority_pages": _build_part6_priority_pages(page_data, product_name, domain, industry),
+        "part7_page_template": _build_part7_template(page_data, product_name, domain, industry),
         "part8_technical": _build_part8_technical(aeo_score, page_data, site_name),
-        "part9_measurement": _build_part9_measurement(site_name, domain, industry),
+        "part9_measurement": _build_part9_measurement(product_name, domain, industry),
         "part10_geo_checklist": _build_part10_geo_checklist(aeo_score, page_data, site_name),
         "geo_checklist": aeo_score.geo_checklist,
         "dimension_details": [{
@@ -367,12 +369,12 @@ def _build_part4_content_coverage(aeo_score, page_data, site_name):
 # ============================================================================
 # Part 5: Persona × Funnel × Use Case 内容机会矩阵
 # ============================================================================
-def _build_part5_opportunities(page_data, site_name, domain, industry):
-    scenarios = _generate_scenarios(site_name, domain, industry)
+def _build_part5_opportunities(page_data, product_name, domain, industry):
+    scenarios = _generate_scenarios(product_name, domain, industry)
 
     return {
         "title": "五、Persona × Funnel × Use Case 内容机会",
-        "description": f"基于 {site_name} 的行业特点（{industry}）和现有内容，以下是推荐的 AI 语义场景覆盖矩阵。每个场景对应一个真实用户可能向 AI 提问的情境：",
+        "description": f"基于 {product_name} 的行业特点（{industry}）和现有内容，以下是推荐的 AI 语义场景覆盖矩阵。每个场景对应一个真实用户可能向 AI 提问的情境：",
         "scenarios": scenarios,
     }
 
@@ -380,8 +382,8 @@ def _build_part5_opportunities(page_data, site_name, domain, industry):
 # ============================================================================
 # Part 6: 最值得优先做的 AEO 页面
 # ============================================================================
-def _build_part6_priority_pages(page_data, site_name, domain, industry):
-    pages = _generate_priority_pages(site_name, domain, industry)
+def _build_part6_priority_pages(page_data, product_name, domain, industry):
+    pages = _generate_priority_pages(product_name, domain, industry)
 
     groups = [
         {"name": "第一组：对比类页面（最快见效）", "pages": pages[:5]},
@@ -401,8 +403,8 @@ def _build_part6_priority_pages(page_data, site_name, domain, industry):
 # ============================================================================
 # Part 7: 页面重构模板
 # ============================================================================
-def _build_part7_template(page_data, site_name, domain, industry):
-    example = _generate_template_example(site_name, domain, industry)
+def _build_part7_template(page_data, product_name, domain, industry):
+    example = _generate_template_example(product_name, domain, industry)
 
     return {
         "title": "七、页面重构模板",
@@ -480,19 +482,19 @@ def _build_part10_geo_checklist(aeo_score, page_data, site_name):
 # ============================================================================
 # Part 9: AEO 效果衡量方式
 # ============================================================================
-def _build_part9_measurement(site_name, domain, industry):
+def _build_part9_measurement(product_name, domain, industry):
     return {
         "title": "九、AEO 效果衡量方式",
-        "description": f"建议为 {site_name} 建立 AI Answer Share 监测机制，每月固定测试一组核心 prompt，从三个维度跟踪 AEO 优化效果：",
+        "description": f"建议为 {product_name} 建立 AI Answer Share 监测机制，每月固定测试一组核心 prompt，从三个维度跟踪 AEO 优化效果：",
         "dimensions": [
             {
                 "name": "1. AI 可见度",
                 "description": "每月测试 5-10 个核心问题，检查品牌是否出现在 AI 推荐答案中",
                 "prompts": [
-                    f"{site_name} 是什么？",
-                    f"{site_name} 好用吗？",
-                    f"{site_name} 适合什么类型的用户？",
-                    f"{site_name} 和竞品有什么区别？",
+                    f"{product_name} 是什么？",
+                    f"{product_name} 好用吗？",
+                    f"{product_name} 适合什么类型的用户？",
+                    f"{product_name} 和竞品有什么区别？",
                 ],
             },
             {
@@ -500,19 +502,19 @@ def _build_part9_measurement(site_name, domain, industry):
                 "description": "在 ChatGPT、Perplexity、Gemini 等工具中测试 10-15 个问题，对比竞品出现频率",
                 "prompts": [
                     f"最好的[{industry}]工具/产品推荐",
-                    f"{site_name} vs 竞品 哪个好？",
+                    f"{product_name} vs 竞品 哪个好？",
                     f"适合小团队的[{industry}]方案",
-                    f"{site_name} 有哪些替代方案？",
+                    f"{product_name} 有哪些替代方案？",
                 ],
             },
             {
                 "name": "3. 品牌叙事准确度",
                 "description": "直接问 AI 关于品牌的问题，检查回答是否准确、完整",
                 "prompts": [
-                    f"What is {site_name}?",
-                    f"What are the pros and cons of {site_name}?",
-                    f"Who is {site_name} best for?",
-                    f"What problems does {site_name} solve?",
+                    f"What is {product_name}?",
+                    f"What are the pros and cons of {product_name}?",
+                    f"Who is {product_name} best for?",
+                    f"What problems does {product_name} solve?",
                 ],
             },
         ],
@@ -535,6 +537,57 @@ def _extract_brand_from_domain(domain: str) -> str:
     return d.strip() or domain
 
 
+def _strip_company_suffixes(name: str) -> str:
+    """去掉公司/法人实体后缀，尽量保留品牌/产品名。"""
+    import re
+    suffix_patterns = [
+        r'\bLTD\.?\s*,?\s*(CO\.?|COMPANY|LIMITED)?\b',
+        r'\bLIMITED\b', r'\bINC\.?\b', r'\bLLC\b', r'\bL\.L\.C\.?\b',
+        r'\bCORP\.?\b', r'\bCORPORATION\b', r'\bGROUP\b',
+        r'有限公司$', r'股份有限公司$', r'有限责任公司$', r'公司$',
+        r'\bLTD\b', r'\bCO\b',
+    ]
+    cleaned = name
+    for pat in suffix_patterns:
+        cleaned = re.sub(pat, '', cleaned, flags=re.I)
+    # 去掉尾部残留标点、逗号、空格
+    cleaned = re.sub(r'^[\s,，.;:·]+|[\s,，.;:·]+$', '', cleaned)
+    return cleaned
+
+
+def _derive_product_name(brand_name: str, domain: str) -> str:
+    """从品牌名或域名中提取更像「产品/品牌」的短名称。
+
+    策略：
+    1. 先清洗法人后缀；
+    2. 若结果简短且不像全大写公司全称，直接用它；
+    3. 否则优先使用域名品牌（通常更短更像产品名）；
+    4. 兜底取前两个词或原品牌名。
+    """
+    import re
+    cleaned = _strip_company_suffixes(brand_name).strip()
+
+    # 简短且不是超长全大写，直接作为产品名
+    if 2 <= len(cleaned) <= 18 and not (cleaned.isupper() and len(cleaned) > 8):
+        return cleaned
+
+    # 域名品牌通常更短更像产品/品牌
+    domain_brand = _extract_brand_from_domain(domain)
+    if domain_brand and len(domain_brand) >= 2:
+        # 如果域名品牌就是原品牌名的子串（去掉后缀后），优先用域名品牌
+        if domain_brand.lower() in cleaned.replace(' ', '').lower() or cleaned.lower() in domain_brand.lower():
+            return domain_brand
+        # 域名品牌比清洗后品牌名更短，用域名品牌
+        if len(domain_brand) < len(cleaned):
+            return domain_brand
+
+    # 仍太长则取前两个词
+    words = cleaned.split()
+    if len(words) >= 2:
+        return " ".join(words[:2])
+    return cleaned or domain_brand or "品牌"
+
+
 def _guess_industry(page_data):
     if page_data is None:
         return "通用"
@@ -550,131 +603,131 @@ def _guess_industry(page_data):
     return "通用"
 
 
-def _generate_scenarios(site_name, domain, industry):
+def _generate_scenarios(product_name, domain, industry):
     templates = {
         "电商/零售": [
             {"persona": "第一次购买的新用户", "funnel": "Mid / Bottom",
              "use_case": "不了解产品怎么选，需要购买指南",
-             "ai_question": f"{site_name} 的产品适合新手吗？怎么选？",
-             "page": f"{site_name} 新手购买指南"},
+             "ai_question": f"{product_name} 的产品适合新手吗？怎么选？",
+             "page": f"{product_name} 新手购买指南"},
             {"persona": "预算敏感的消费者", "funnel": "Mid",
              "use_case": "想确认性价比，和竞品比较",
-             "ai_question": f"{site_name} 和竞品比哪个更值得买？",
-             "page": f"{site_name} vs 竞品：性价比对比"},
+             "ai_question": f"{product_name} 和竞品比哪个更值得买？",
+             "page": f"{product_name} vs 竞品：性价比对比"},
             {"persona": "注重品质的专业用户", "funnel": "Bottom",
              "use_case": "关心材质、工艺、售后保障",
-             "ai_question": f"{site_name} 的产品质量怎么样？有什么保障？",
-             "page": f"{site_name} 品质与售后详解"},
+             "ai_question": f"{product_name} 的产品质量怎么样？有什么保障？",
+             "page": f"{product_name} 品质与售后详解"},
             {"persona": "给他人买礼物的用户", "funnel": "Top / Mid",
              "use_case": "不知道该买什么，需要礼物推荐",
-             "ai_question": f"{site_name} 适合送礼吗？有什么推荐？",
-             "page": f"{site_name} 礼物选购指南"},
+             "ai_question": f"{product_name} 适合送礼吗？有什么推荐？",
+             "page": f"{product_name} 礼物选购指南"},
         ],
         "SaaS/软件": [
             {"persona": "小团队/初创公司创始人", "funnel": "Mid",
              "use_case": "预算有限，需要性价比高的工具",
-             "ai_question": f"{site_name} 适合小团队吗？价格贵不贵？",
-             "page": f"{site_name} 小团队方案"},
+             "ai_question": f"{product_name} 适合小团队吗？价格贵不贵？",
+             "page": f"{product_name} 小团队方案"},
             {"persona": "企业采购决策者", "funnel": "Bottom",
              "use_case": "关心安全性、集成能力、ROI",
-             "ai_question": f"{site_name} 企业版有什么功能？安全吗？",
-             "page": f"{site_name} 企业方案与安全"},
+             "ai_question": f"{product_name} 企业版有什么功能？安全吗？",
+             "page": f"{product_name} 企业方案与安全"},
             {"persona": "从竞品切换的用户", "funnel": "Mid",
              "use_case": "觉得现有工具太贵或不好用",
-             "ai_question": f"{site_name} 和 XX 比哪个好？迁移麻烦吗？",
-             "page": f"{site_name} vs 竞品对比"},
+             "ai_question": f"{product_name} 和 XX 比哪个好？迁移麻烦吗？",
+             "page": f"{product_name} vs 竞品对比"},
             {"persona": "自由职业者/个人用户", "funnel": "Mid / Bottom",
              "use_case": "需要个人能负担的方案",
-             "ai_question": f"{site_name} 有免费版或个人版吗？",
-             "page": f"{site_name} 个人/免费方案"},
+             "ai_question": f"{product_name} 有免费版或个人版吗？",
+             "page": f"{product_name} 个人/免费方案"},
         ],
         "内容/媒体": [
             {"persona": "信息搜索者", "funnel": "Top",
              "use_case": "想了解某个话题或概念",
-             "ai_question": f"{site_name} 上的信息可信吗？",
-             "page": f"关于 {site_name}：编辑方针与可信度"},
+             "ai_question": f"{product_name} 上的信息可信吗？",
+             "page": f"关于 {product_name}：编辑方针与可信度"},
             {"persona": "深度学习者", "funnel": "Mid",
              "use_case": "需要系统性的知识体系",
-             "ai_question": f"{site_name} 有哪些深度内容？",
-             "page": f"{site_name} 内容导航与专题"},
+             "ai_question": f"{product_name} 有哪些深度内容？",
+             "page": f"{product_name} 内容导航与专题"},
         ],
         "服务/咨询": [
             {"persona": "有明确需求的客户", "funnel": "Bottom",
              "use_case": "需要确认服务是否适合自己的情况",
-             "ai_question": f"{site_name} 适合我的情况吗？",
-             "page": f"{site_name} 服务适用场景"},
+             "ai_question": f"{product_name} 适合我的情况吗？",
+             "page": f"{product_name} 服务适用场景"},
             {"persona": "在比较服务商的客户", "funnel": "Mid",
              "use_case": "在几家服务商之间比较",
-             "ai_question": f"{site_name} 和 XX 服务有什么区别？",
-             "page": f"{site_name} vs 竞品服务对比"},
+             "ai_question": f"{product_name} 和 XX 服务有什么区别？",
+             "page": f"{product_name} vs 竞品服务对比"},
         ],
     }
 
     default = [
         {"persona": "潜在客户", "funnel": "Top",
-         "use_case": f"第一次了解 {site_name}",
-         "ai_question": f"{site_name} 是什么？靠谱吗？",
-         "page": f"关于 {site_name}"},
+         "use_case": f"第一次了解 {product_name}",
+         "ai_question": f"{product_name} 是什么？靠谱吗？",
+         "page": f"关于 {product_name}"},
         {"persona": "对比中的用户", "funnel": "Mid",
-         "use_case": f"在 {site_name} 和竞品之间选择",
-         "ai_question": f"{site_name} 和竞品比哪个好？",
-         "page": f"{site_name} vs 竞品"},
+         "use_case": f"在 {product_name} 和竞品之间选择",
+         "ai_question": f"{product_name} 和竞品比哪个好？",
+         "page": f"{product_name} vs 竞品"},
         {"persona": "即将决策的用户", "funnel": "Bottom",
          "use_case": "需要确认是否适合自己",
-         "ai_question": f"{site_name} 适合我吗？",
-         "page": f"{site_name} 适合什么人群"},
+         "ai_question": f"{product_name} 适合我吗？",
+         "page": f"{product_name} 适合什么人群"},
         {"persona": "老用户", "funnel": "Bottom",
          "use_case": "想了解更多功能或场景",
-         "ai_question": f"{site_name} 还有什么用法？",
-         "page": f"{site_name} 进阶指南"},
+         "ai_question": f"{product_name} 还有什么用法？",
+         "page": f"{product_name} 进阶指南"},
     ]
 
     return templates.get(industry, default)
 
 
-def _generate_priority_pages(site_name, domain, industry):
+def _generate_priority_pages(product_name, domain, industry):
     base = [
-        f"{site_name} vs 竞品方案：全面对比",
-        f"{site_name} 适合什么样的用户？",
-        f"{site_name} 的优缺点分析",
-        f"{site_name} 定价是否合理？价值分析",
-        f"什么时候应该选择 {site_name}？",
-        f"什么时候不建议使用 {site_name}？",
-        f"{site_name} 入门指南：新用户必读",
-        f"{site_name} 和替代方案的区别",
-        f"{site_name} 最常被问到的 20 个问题",
-        f"关于 {site_name} 你需要知道的一切",
-        f"{site_name} 使用技巧与最佳实践",
-        f"{site_name} 的用户真实评价与案例",
-        f"如何最大化 {site_name} 的价值？",
-        f"{site_name} 适合小团队/个人吗？",
-        f"{site_name} 的安全性与数据保护",
-        f"{site_name} 的更新与未来规划",
-        f"从 XX 迁移到 {site_name} 的指南",
-        f"{site_name} 与其他工具/服务的集成",
-        f"{site_name} 的隐藏功能与高级用法",
-        f"选择 {site_name} 的 10 个理由",
+        f"{product_name} vs 竞品方案：全面对比",
+        f"{product_name} 适合什么样的用户？",
+        f"{product_name} 的优缺点分析",
+        f"{product_name} 定价是否合理？价值分析",
+        f"什么时候应该选择 {product_name}？",
+        f"什么时候不建议使用 {product_name}？",
+        f"{product_name} 入门指南：新用户必读",
+        f"{product_name} 和替代方案的区别",
+        f"{product_name} 最常被问到的 20 个问题",
+        f"关于 {product_name} 你需要知道的一切",
+        f"{product_name} 使用技巧与最佳实践",
+        f"{product_name} 的用户真实评价与案例",
+        f"如何最大化 {product_name} 的价值？",
+        f"{product_name} 适合小团队/个人吗？",
+        f"{product_name} 的安全性与数据保护",
+        f"{product_name} 的更新与未来规划",
+        f"从 XX 迁移到 {product_name} 的指南",
+        f"{product_name} 与其他工具/服务的集成",
+        f"{product_name} 的隐藏功能与高级用法",
+        f"选择 {product_name} 的 10 个理由",
     ]
     return base
 
 
-def _generate_template_example(site_name, domain, industry):
+def _generate_template_example(product_name, domain, industry):
     return {
-        "page_title": f"{site_name} 适合什么样的用户？完整指南",
+        "page_title": f"{product_name} 适合什么样的用户？完整指南",
         "structure": [
-            {"level": "H1", "content": f"{site_name} 适合什么样的用户？完整指南"},
+            {"level": "H1", "content": f"{product_name} 适合什么样的用户？完整指南"},
             {"level": "开头摘要",
-             "content": f"直接回答：{site_name} 最适合[某类人群]，尤其是当他们[遇到什么情况]时。但如果[某种限制]，可能不一定是最佳选择。"},
-            {"level": "H2", "content": f"什么样的用户最适合 {site_name}？"},
-            {"level": "H2", "content": f"什么情况下不建议使用 {site_name}？"},
-            {"level": "H2", "content": f"{site_name} 和替代方案怎么选？"},
+             "content": f"直接回答：{product_name} 最适合[某类人群]，尤其是当他们[遇到什么情况]时。但如果[某种限制]，可能不一定是最佳选择。"},
+            {"level": "H2", "content": f"什么样的用户最适合 {product_name}？"},
+            {"level": "H2", "content": f"什么情况下不建议使用 {product_name}？"},
+            {"level": "H2", "content": f"{product_name} 和替代方案怎么选？"},
             {"level": "H2", "content": "真实用户案例"},
             {"level": "H2", "content": "常见问题 (FAQ)"},
             {"level": "对比表", "content": "从适合人群、价格、上手难度、核心优势等维度对比"},
         ],
         "geo_template": (
             f"对于【目标人群】，如果他们正在【具体场景】下遇到【具体问题】，"
-            f"那么 {site_name} 是一个合适选择，因为它可以【解决方式】。"
+            f"那么 {product_name} 是一个合适选择，因为它可以【解决方式】。"
             f"它尤其适合【更具体情况】，但如果【某种限制】，可能不一定是最佳选择。"
         ),
         "eight_elements": [

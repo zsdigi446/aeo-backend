@@ -250,9 +250,11 @@ SKELETONS = [
     (re.compile(r'^Issue (\d+):标题缺乏问题式结构$'),
      lambda m: f"Issue {m.group(1)}: Headings lack question-style structure"),
 
-    # ---- Part 4 描述 ----
+    # ---- Part 4/5 描述 ----
     (re.compile(r'^基于 (.+?) 的行业特点和现有内容，以下是推荐的 AI 语义场景覆盖矩阵：$'),
      lambda m: f"Based on {m.group(1)}'s industry profile and existing content, here is the recommended AI semantic scenario coverage matrix:"),
+    (re.compile(r'^基于 (.+?) 的行业特点（.+?）和现有内容，以下是推荐的 AI 语义场景覆盖矩阵。每个场景对应一个真实用户可能向 AI 提问的情境：$'),
+     lambda m: f"Based on {m.group(1)}'s industry profile and existing content, here is the recommended AI semantic scenario coverage matrix. Each scenario corresponds to a real user situation where they might ask AI:"),
 
     # ---- Part 4 use_case ----
     (re.compile(r'^第一次了解 (.+?)$'), lambda m: f"First time learning about {m.group(1)}"),
@@ -370,6 +372,9 @@ SKELETONS = [
     (re.compile(r'^建议为 (.+?) 建立 AI Answer Share 监测机制，每月固定测试一组核心 prompt，关注三个维度：$'),
      lambda m: f"Set up an AI Answer Share monitoring mechanism for {m.group(1)}, "
                 f"testing a fixed set of core prompts monthly and watching three dimensions:"),
+    (re.compile(r'^建议为 (.+?) 建立 AI Answer Share 监测机制，每月固定测试一组核心 prompt，从三个维度跟踪 AEO 优化效果：$'),
+     lambda m: f"Set up an AI Answer Share monitoring mechanism for {m.group(1)}, "
+                f"testing a fixed set of core prompts monthly to track AEO optimization across three dimensions:"),
     (re.compile(r'^(.+?) 是什么？$'), lambda m: f"What is {m.group(1)}?"),
     (re.compile(r'^(.+?) 好用吗？$'), lambda m: f"Is {m.group(1)} easy to use?"),
     (re.compile(r'^(.+?) 适合什么类型的用户？$'), lambda m: f"What type of users is {m.group(1)} for?"),

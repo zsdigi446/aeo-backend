@@ -228,8 +228,9 @@ class Crawler:
             words = text.split()
             if 1 <= len(words) <= 3:
                 score += 30
+            # 全大写且较长的字符串通常是公司全称，降低权重
             if text.isupper():
-                score += 20
+                score += 20 if len(text) <= 15 else -10
             elif words and all(w[0].isupper() for w in words if w):
                 score += 15
             generic = ["bed", "car", "seat", "cover", "product", "products", "home",
@@ -238,23 +239,45 @@ class Crawler:
             for w in words:
                 if w.lower().strip("s") in generic:
                     score -= 25
+            # 过长或包含法人后缀的，更可能是公司名而非品牌/产品名
             if len(text) > 20:
-                score -= 10
+                score -= 15
+            if len(text) > 30:
+                score -= 20
+            legal_words = ["ltd", "limited", "inc", "llc", "corp", "corporation",
+                           "company", "co", "group", "有限公司", "公司"]
+            lower_text = text.lower()
+            if any(w in lower_text for w in legal_words):
+                score -= 25
             return score
 
         unique.sort(key=brand_score, reverse=True)
         return unique[0] if unique and brand_score(unique[0]) > 0 else ""
 
     def _clean_brand(self, text: str) -> str:
-        """清理品牌名：去首尾空白、截断过长文本。"""
+        """清理品牌名：去掉法人后缀、首尾空白、截断过长文本，尽量保留产品/品牌名。"""
         if not text:
             return ""
         text = text.strip()
         # 如果包含换行或明显是段落，则不适合做品牌名
-        if "\n" in text or len(text) > 60:
+        if "\n" in text or len(text) > 80:
             return ""
         # 去掉末尾常见标语词
         text = re.sub(r'[\s]*[-|—–:][\s]*.*$', '', text)
+        # 去掉常见公司/法人实体后缀（中英）
+        suffix_patterns = [
+            r'\bLTD\.?\s*,?\s*(CO\.?|COMPANY|LIMITED)?\b',
+            r'\bLIMITED\b', r'\bINC\.?\b', r'\bLLC\b', r'\bL\.L\.C\.?\b',
+            r'\bCORP\.?\b', r'\bCORPORATION\b', r'\bGROUP\b',
+            r'有限公司$', r'股份有限公司$', r'有限责任公司$', r'公司$',
+            r'\bLTD\b', r'\bCO\b',
+        ]
+        for pat in suffix_patterns:
+            text = re.sub(pat, '', text, flags=re.I)
+        # 清理残留标点和前后空格
+        text = re.sub(r'^[\s,，.;:·]+|[\s,，.;:·]+$', '', text)
+        if len(text) < 2:
+            return ""
         return text[:60]
 
     def _extract_headings(self, soup, data):

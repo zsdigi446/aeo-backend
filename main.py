@@ -100,7 +100,7 @@ async def get_report(report_id: str, type: str = Query("free", pattern="^(free|f
     """
     report = await store.get_report(report_id)
     if not report:
-        raise HTTPException(status_code=404, detail="报告不存在或已过期（请重新分析）")
+        raise HTTPException(status_code=404, detail="报告不存在（请重新分析）")
 
     full = report["full_report"]
     if type == "full":
@@ -192,7 +192,7 @@ async def download_word(report_id: str, lang: str = Query("zh-CN")):
     """下载 Word 版报告（按 lang 翻译）"""
     report = await store.get_report(report_id)
     if not report:
-        raise HTTPException(status_code=404, detail="报告不存在或已过期（请重新分析）")
+        raise HTTPException(status_code=404, detail="报告不存在（请重新分析）")
 
     from word_generator import generate_word
     doc_bytes = generate_word(translate_report(report["full_report"], lang), lang)

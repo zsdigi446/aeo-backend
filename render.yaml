@@ -29,3 +29,8 @@ services:
       - key: WX_PRODUCT_DESC
         value: "AEO网站完整分析报告"
         sync: false
+      # Supabase 持久化（不配置则回退本地 JSON 文件；KEY 用 service_role，勿用 anon）
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
